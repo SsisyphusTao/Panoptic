@@ -410,6 +410,12 @@ class Warpaffine(object):
         else:
             trans = cv2.getAffineTransform(np.float32(src), np.float32(dst))
         return trans
+    
+    def _get_border(self, border, size):
+        i = 1
+        while size - border // i <= border // i:
+            i *= 2
+        return border // i
 
     def __call__(self, img, ann, edge):
         height, width = img.shape[0], img.shape[1]
@@ -417,8 +423,8 @@ class Warpaffine(object):
         s = max(img.shape[0], img.shape[1])
 
         s = s * np.random.choice(np.arange(0.6, 1.4, 0.1))
-        w_border = 128
-        h_border = 128
+        w_border = self._get_border(128, img.shape[1])
+        h_border = self._get_border(128, img.shape[0])
         c[0] = np.random.randint(low=w_border, high=img.shape[1] - w_border)
         c[1] = np.random.randint(low=h_border, high=img.shape[0] - h_border)
 

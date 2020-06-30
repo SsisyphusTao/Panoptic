@@ -72,6 +72,7 @@ class panopticDataset(Dataset):
 
         img, ann, edge = self.aug(img, ann, edge)
         return img, ann.astype(np.int), edge
+    name = 'panoptic-sementic'
 
 if __name__ == "__main__":
     serialize()
