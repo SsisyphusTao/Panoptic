@@ -15,15 +15,15 @@ parser = argparse.ArgumentParser(
 train_set = parser.add_mutually_exclusive_group()
 parser.add_argument('--datafile', default='/ai/ailab/Share/TaoData/panoptic.hdf5',
                     help='Path of training set')
-parser.add_argument('--batch_size', default=12, type=int,
+parser.add_argument('--batch_size', default=64, type=int,
                     help='Batch size for training')
 parser.add_argument('--resume', type=str,
                     help='Checkpoint state_dict file to resume training from')
-parser.add_argument('--epochs', default=200, type=int,
+parser.add_argument('--epochs', default=70, type=int,
                     help='the number of training epochs')
 parser.add_argument('--start_iter', default=0, type=int,
                     help='Resume training at this iter')
-parser.add_argument('--num_workers', default=0, type=int,
+parser.add_argument('--num_workers', default=1, type=int,
                     help='Number of workers used in dataloading')
 parser.add_argument('--lr', '--learning-rate', default=1.25e-4, type=float,
                     help='initial learning rate')
@@ -57,7 +57,8 @@ def train_one_epoch(loader, getloss, optimizer, epoch):
 
 def train():
     start_time = time.clock()
-    dataset = panopticDataset(h5py.File('/ai/ailab/Share/TaoData/panoptic.hdf5', 'r'), Augmentation())
+    f = h5py.File('/ai/ailab/Share/TaoData/panoptic.hdf5', 'r')
+    dataset = panopticDataset(f, Augmentation())
     heads = {'cls': 81,
             'edge': 1}
     net = get_pose_net(34, heads)
@@ -77,7 +78,7 @@ def train():
     #                       weight_decay=5e-4)
     for param_group in optimizer.param_groups:
         param_group['initial_lr'] = args.lr
-    adjust_learning_rate = optim.lr_scheduler.MultiStepLR(optimizer, [120, 180], 0.1, args.start_iter)
+    adjust_learning_rate = optim.lr_scheduler.MultiStepLR(optimizer, [35, 75], 0.1, args.start_iter)
     # adjust_learning_rate = optim.lr_scheduler.CosineAnnealingLR(optimizer, args.epochs, args.start_iter)
     getloss = nn.DataParallel(NetwithLoss(net).cuda(), device_ids=[0,1,2,3])
 
@@ -95,10 +96,10 @@ def train():
     for iteration in range(args.start_iter + 1, args.epochs):
         loss = train_one_epoch(data_loader, getloss, optimizer, iteration)
         adjust_learning_rate.step()
-        if (not (iteration-args.start_iter) == 0 and iteration % 5 == 0):
+        if (not (iteration-args.start_iter) == 0):
             print('Saving state, iter:', iteration)
             torch.save(net.state_dict(), args.save_folder + 'ctnet_dla_' +
-                       '%03d'&iteration + loss + '.pth')
+                       '%03d'%iteration + loss + '.pth')
     torch.save(net.state_dict(),
                 args.save_folder + 'ctnet_dla_end' + loss + '.pth')
     end_time=time.clock()

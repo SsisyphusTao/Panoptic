@@ -74,7 +74,7 @@ class SubtractMeans(object):
         self.mean = np.array(mean, dtype=np.float32)
 
     def __call__(self, image, ann=None, edge=None):
-        image = image.astype(np.float32)
+        image = image.astype(np.float32) / 255.
         image -= self.mean
         return image.astype(np.float32), ann, edge
 
@@ -442,15 +442,15 @@ class Warpaffine(object):
         return img, ann, edge
 
 class Augmentation(object):
-    def __init__(self, size=512, mean=(127., 127., 127.)):
+    def __init__(self, size=224, mean=(0.5, 0.5, 0.5)):
         self.mean = mean
         self.size = size
         self.augment = Compose([
             ConvertFromInts(),
             PhotometricDistort(),
+            SubtractMeans(self.mean),
             Warpaffine(self.size),
             RandomMirror(),
-            SubtractMeans(self.mean)
         ])
 
     def __call__(self, img, ann, edge):
