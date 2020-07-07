@@ -38,4 +38,4 @@ def collate(batch):
         edges.append(torch.from_numpy(sample[2]))
     anns = torch.stack(anns)
     anns.map_(anns, lambda x, y: cat_ids[x])
-    return torch.stack(imgs), anns.type(torch.long), torch.stack(edges).unsqueeze(1)
+    return torch.stack(imgs), anns, torch.stack(edges).unsqueeze(1)

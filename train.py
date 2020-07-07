@@ -83,14 +83,15 @@ def train():
     getloss = nn.DataParallel(NetwithLoss(net).cuda(), device_ids=[0,1,2,3])
 
     print('Loading the dataset...')
+    f = h5py.File('/ai/ailab/Share/TaoData/panoptic.hdf5', 'r')
+    dataset = panopticDataset(f, Augmentation())
+    data_loader = data.DataLoader(dataset, args.batch_size,
+                                num_workers=args.num_workers,
+                                shuffle=True, collate_fn=collate,
+                                pin_memory=True)
     print('Training CenterNet on:', dataset.name)
     print('Using the specified args:')
     print(args)
-
-    data_loader = data.DataLoader(dataset, args.batch_size,
-                                  num_workers=args.num_workers,
-                                  shuffle=True, collate_fn=collate,
-                                  pin_memory=True)
 
     # create batch iterator
     for iteration in range(args.start_iter + 1, args.epochs):

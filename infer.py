@@ -1,10 +1,11 @@
-# %%
 import torch
 import cv2 as cv
 import numpy as np
 from sys import argv
 from nets import get_pose_net
 from PIL import Image
+import json
+from cocotask import class_name
 
 def get_3rd_point(a, b):
     direct = a - b
@@ -65,19 +66,41 @@ def pre_process(image, meta=None):
     inp_image = cv.warpAffine(
       resized_image, trans_input, (inp_width, inp_height),
       flags=cv.INTER_LINEAR)
-    inp_image = ((inp_image / 255. - [0.5]*3)).astype(np.float32)
+
+    mean=np.array([0.40789654, 0.44719302, 0.47026115],
+                   dtype=np.float32)
+    std=np.array([0.28863828, 0.27408164, 0.27809835],
+                   dtype=np.float32)
+
+    inp_image = (inp_image.astype(np.float32) / 255. - mean) / std
     images = inp_image.transpose(2, 0, 1).reshape(1, 3, inp_height, inp_width)
     images = torch.from_numpy(images)
     return images
 
-model = 'checkpoints/ctnet_dla_008_968.pth'
+def visualize(c):
+    with open('/ai/ailab/Share/TaoData/coco/panoptic/annotations/panoptic_coco_categories.json') as f:
+        color = json.load(f)
+    text = {}
+    for i, x in enumerate(c):
+        for j, y in enumerate(x):
+            if c[i][j]:
+                text.update({class_name[c[i][j]]: color[c[i][j]-1]['color']})
+                c[i][j] = color[c[i][j]-1]['color']
+            else:
+                c[i][j] = [0, 0, 0]
+    img = np.array(c, dtype=np.uint8)
+    for i, t in enumerate(tuple(text)):
+        cv.putText(img, t, (i*50,20), 0, 0.5, tuple(text[t]), 1)
+    return img
+
+model = 'checkpoints/ctnet_dla_006_7735.pth'
 imgpath = 'sheep-on-green-grass.jpg'
 
-heads = {'cls': 81,
+heads = {'seg': 1,
+        'cls': 81,
         'edge': 1}
 net = get_pose_net(34, heads).cuda()
-missing, unexpected = net.load_state_dict({k.replace('module.',''):v 
-for k,v in torch.load(model).items()})
+missing, unexpected = net.load_state_dict(torch.load(model, map_location=torch.device('cpu')))
 if missing:
     print('Missing:', missing)
 if unexpected:
@@ -92,17 +115,23 @@ img = pre_process(img)
 with torch.no_grad():
     # img = torch.from_numpy(img).permute(2,0,1).unsqueeze(0).type(torch.float).cuda()
     output = net(img.cuda())
-#%%
-# a = torch.softmax(output['cls'],1).squeeze().cpu().numpy()
-a = output['cls'].squeeze().cpu().numpy()
+# a = torch.softmax(output['cls'],1).squeeze()
+# a = torch.argmax(a, 0)
 b = output['edge'].sigmoid().squeeze().cpu().numpy()
-
+c = output['seg'][0][0]*80
+print(c)
+c = c.round().cpu().numpy().astype(np.uint8)
+print(c)
+c = c.tolist()
 b[np.where(b<0.3)] = 0
 b[np.where(b>0)] = 255
-c = a[19]
+# c = a.cpu().numpy().tolist()
 
-# %%
-display(Image.fromarray(b.astype(np.uint8)))
-display(Image.fromarray(c.astype(np.uint8)))
 
-# %%
+edge = cv.cvtColor(b.astype(np.uint8), cv.COLOR_GRAY2BGR)
+seg = visualize(c)
+
+# # display(Image.fromarray(b.astype(np.uint8)))
+# # display(Image.fromarray(c.astype(np.uint8)))
+show = cv.hconcat([edge, seg])
+cv.imwrite('out.jpg', show)

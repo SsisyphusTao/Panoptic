@@ -70,12 +70,14 @@ class ConvertFromInts(object):
 
 
 class SubtractMeans(object):
-    def __init__(self, mean):
-        self.mean = np.array(mean, dtype=np.float32)
+    def __init__(self, mean, std):
+        self.mean = mean
+        self.std = std
 
     def __call__(self, image, ann=None, edge=None):
         image = image.astype(np.float32) / 255.
         image -= self.mean
+        image /= self.std
         return image.astype(np.float32), ann, edge
 
 
@@ -437,18 +439,21 @@ class Warpaffine(object):
                          flags=cv2.INTER_NEAREST)
         edge = cv2.warpAffine(edge, trans_input, 
                          (self.size, self.size),
-                         flags=cv2.INTER_LINEAR)
+                         flags=cv2.INTER_NEAREST)
         
         return img, ann, edge
 
 class Augmentation(object):
-    def __init__(self, size=224, mean=(0.5, 0.5, 0.5)):
+    def __init__(self, size=224, mean=np.array([0.40789654, 0.44719302, 0.47026115],
+                   dtype=np.float32), std=np.array([0.28863828, 0.27408164, 0.27809835],
+                   dtype=np.float32)):
         self.mean = mean
+        self.std = std
         self.size = size
         self.augment = Compose([
             ConvertFromInts(),
             PhotometricDistort(),
-            SubtractMeans(self.mean),
+            SubtractMeans(self.mean, self.std),
             Warpaffine(self.size),
             RandomMirror(),
         ])
