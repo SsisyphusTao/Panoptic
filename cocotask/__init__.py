@@ -36,6 +36,4 @@ def collate(batch):
         imgs.append(torch.from_numpy(sample[0]).permute(2,0,1))
         anns.append(torch.from_numpy(sample[1]))
         edges.append(torch.from_numpy(sample[2]))
-    anns = torch.stack(anns)
-    anns.map_(anns, lambda x, y: cat_ids[x])
-    return torch.stack(imgs), anns, torch.stack(edges).unsqueeze(1)
+    return torch.stack(imgs), torch.stack(anns), torch.stack(edges)

@@ -1,17 +1,15 @@
-import cv2 as cv
 import numpy as np
-import json
 import h5py
 from os.path import join
-from tqdm import tqdm
 
 from torch.utils.data import Dataset
 
 class panopticDataset(Dataset):
     def __init__(self, f, aug):
         super().__init__()
-        self.data = f
-        self.Ids = list(self.data.keys())
+        self.f = f
+        with h5py.File(f, 'r') as data:
+            self.Ids = list(data.keys())
         self.aug = aug
         np.random.shuffle(self.Ids)
 
@@ -25,14 +23,13 @@ class panopticDataset(Dataset):
         return border // i
     
     def __getitem__(self, index):
-        sample = self.data[self.Ids[index]]
-        img = sample[:,:,:3]
-        ann = sample[:,:,3]
-        edge = sample[:,:,4]
-
-        ann[np.where(ann>90)] = 0
+        with h5py.File(self.f, 'r') as data:
+            sample = data[self.Ids[index]]
+            img = sample[:,:,:3]
+            ann = sample[:,:,3]
+            edge = sample[:,:,4]
 
         img, ann, edge = self.aug(img, ann, edge)
-        return img, ann.astype(np.int), edge
+        return img, ann, edge
     name = 'panoptic-sementic'
 

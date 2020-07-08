@@ -8,12 +8,11 @@ import torch.utils.data as data
 from nets import get_pose_net
 import argparse
 import time
-import h5py
 
 parser = argparse.ArgumentParser(
     description='CenterNet task')
 train_set = parser.add_mutually_exclusive_group()
-parser.add_argument('--datafile', default='/ai/ailab/Share/TaoData/panoptic.hdf5',
+parser.add_argument('--datafile', default='/ai/ailab/Share/TaoData/sementic.hdf5',
                     help='Path of training set')
 parser.add_argument('--batch_size', default=64, type=int,
                     help='Batch size for training')
@@ -39,8 +38,8 @@ def train_one_epoch(loader, getloss, optimizer, epoch):
     # load train data
     for iteration, batch in enumerate(loader): 
         batch[0] = batch[0].cuda(non_blocking=True)
-        batch[1] = batch[1].cuda(non_blocking=True)  
-        batch[2] = batch[2].cuda(non_blocking=True)  
+        batch[1] = batch[1].cuda(non_blocking=True)
+        batch[2] = batch[2].cuda(non_blocking=True)
         # forward & backprop
         optimizer.zero_grad()
         loss = getloss(*batch).mean()
@@ -57,10 +56,7 @@ def train_one_epoch(loader, getloss, optimizer, epoch):
 
 def train():
     start_time = time.clock()
-    f = h5py.File('/ai/ailab/Share/TaoData/panoptic.hdf5', 'r')
-    dataset = panopticDataset(f, Augmentation())
-    heads = {'cls': 81,
-            'edge': 1}
+    heads = {'seg': 81}
     net = get_pose_net(34, heads)
     if args.resume:
         missing, unexpected = net.load_state_dict({k.replace('module.',''):v 
@@ -83,8 +79,7 @@ def train():
     getloss = nn.DataParallel(NetwithLoss(net).cuda(), device_ids=[0,1,2,3])
 
     print('Loading the dataset...')
-    f = h5py.File('/ai/ailab/Share/TaoData/panoptic.hdf5', 'r')
-    dataset = panopticDataset(f, Augmentation())
+    dataset = panopticDataset(args.datafile, Augmentation())
     data_loader = data.DataLoader(dataset, args.batch_size,
                                 num_workers=args.num_workers,
                                 shuffle=True, collate_fn=collate,

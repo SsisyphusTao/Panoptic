@@ -32,11 +32,11 @@ def focalloss(pred, gt):
 class NetwithLoss(torch.nn.Module):
     def __init__(self, net):
         super().__init__()
-        self.criter_for_cls = torch.nn.CrossEntropyLoss()
+        self.criterion = torch.nn.CrossEntropyLoss(reduction='none')
         self.criter_for_edge = focalloss
         self.net = net
     def forward(self, imgs, anns, edges):
         preds = self.net(imgs)
-        loss_cls = self.criter_for_cls(preds['cls'], anns.type(torch.long))
-        loss_edge = self.criter_for_edge(preds['edge'].sigmoid_(), edges)
-        return loss_cls + loss_edge
+        edges = (edges.type(torch.float)/2.).sigmoid()
+        loss = self.criterion(preds['seg'], anns.type(torch.long)) * edges
+        return loss.mean()
