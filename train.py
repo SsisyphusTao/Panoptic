@@ -12,7 +12,7 @@ import time
 parser = argparse.ArgumentParser(
     description='CenterNet task')
 train_set = parser.add_mutually_exclusive_group()
-parser.add_argument('--datafile', default='/ai/ailab/Share/TaoData/sementic.hdf5',
+parser.add_argument('--datafile', default='/ai/ailab/Share/TaoData/sementic.h5',
                     help='Path of training set')
 parser.add_argument('--batch_size', default=64, type=int,
                     help='Batch size for training')
@@ -42,25 +42,27 @@ def train_one_epoch(loader, getloss, optimizer, epoch):
         batch[2] = batch[2].cuda(non_blocking=True)
         # forward & backprop
         optimizer.zero_grad()
-        loss = getloss(*batch).mean()
+        loss, c, e = getloss(*batch)
+        loss = loss.mean()
         loss.backward()
         optimizer.step()
         t1 = time.clock()
         loss_amount += loss.item()
         if iteration % 10 == 0 and not iteration == 0:
-            print('Loss: %.6f | iter: %03d | timer: %.4f sec. | epoch: %d' %
-                    (loss_amount/iteration, iteration, t1-t0, epoch))
+            print('Loss: %.6f, cls: %.6f, edge: %.6f | iter: %03d | timer: %.4f sec. | epoch: %d' %
+                    (loss_amount/iteration, c.mean().item(), e.mean().item(), iteration, t1-t0, epoch))
         t0 = t1
     print('Loss: %.6f -------------------------------------------------------------------------------' % (loss_amount/iteration))
     return '_%d' % (loss_amount/iteration*1000)
 
 def train():
     start_time = time.clock()
-    heads = {'seg': 81}
+    heads = {'cls': 81,
+             'edge': 1}
     net = get_pose_net(34, heads)
     if args.resume:
         missing, unexpected = net.load_state_dict({k.replace('module.',''):v 
-        for k,v in torch.load(args.resume).items()})
+        for k,v in torch.load(args.resume).items()}, strict=False)
         if missing:
             print('Missing:', missing)
         if unexpected:

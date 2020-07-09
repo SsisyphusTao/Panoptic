@@ -93,14 +93,13 @@ def visualize(c):
         cv.putText(img, t, (i*50,20), 0, 0.5, tuple(text[t]), 1)
     return img
 
-model = 'checkpoints/ctnet_dla_006_7735.pth'
+model = 'checkpoints/ctnet_dla_001_2931.pth'
 imgpath = 'sheep-on-green-grass.jpg'
 
-heads = {'seg': 1,
-        'cls': 81,
-        'edge': 1}
+heads = {'cls': 81,
+         'edge': 1}
 net = get_pose_net(34, heads).cuda()
-missing, unexpected = net.load_state_dict(torch.load(model, map_location=torch.device('cpu')))
+missing, unexpected = net.load_state_dict(torch.load(model))
 if missing:
     print('Missing:', missing)
 if unexpected:
@@ -110,28 +109,18 @@ net.eval()
 img = cv.imread(imgpath)
 img = cv.cvtColor(img, cv.COLOR_BGR2RGB)
 img = pre_process(img)
-# img = cv.resize(img, (224,224))
 
 with torch.no_grad():
-    # img = torch.from_numpy(img).permute(2,0,1).unsqueeze(0).type(torch.float).cuda()
     output = net(img.cuda())
-# a = torch.softmax(output['cls'],1).squeeze()
-# a = torch.argmax(a, 0)
+a = torch.softmax(output['cls'],1).squeeze()
+a = torch.argmax(a, 0)
+a = a.cpu().numpy().tolist()
 b = output['edge'].sigmoid().squeeze().cpu().numpy()
-c = output['seg'][0][0]*80
-print(c)
-c = c.round().cpu().numpy().astype(np.uint8)
-print(c)
-c = c.tolist()
 b[np.where(b<0.3)] = 0
 b[np.where(b>0)] = 255
-# c = a.cpu().numpy().tolist()
-
 
 edge = cv.cvtColor(b.astype(np.uint8), cv.COLOR_GRAY2BGR)
-seg = visualize(c)
+seg = visualize(a)
 
-# # display(Image.fromarray(b.astype(np.uint8)))
-# # display(Image.fromarray(c.astype(np.uint8)))
 show = cv.hconcat([edge, seg])
 cv.imwrite('out.jpg', show)

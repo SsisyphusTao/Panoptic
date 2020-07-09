@@ -8,8 +8,9 @@ class panopticDataset(Dataset):
     def __init__(self, f, aug):
         super().__init__()
         self.f = f
-        with h5py.File(f, 'r') as data:
-            self.Ids = list(data.keys())
+        # with h5py.File(f, 'r') as data:
+        self.data = h5py.File(f, 'r')
+        self.Ids = list(self.data.keys())
         self.aug = aug
         np.random.shuffle(self.Ids)
 
@@ -23,11 +24,11 @@ class panopticDataset(Dataset):
         return border // i
     
     def __getitem__(self, index):
-        with h5py.File(self.f, 'r') as data:
-            sample = data[self.Ids[index]]
-            img = sample[:,:,:3]
-            ann = sample[:,:,3]
-            edge = sample[:,:,4]
+        # with h5py.File(self.f, 'r') as data:
+        sample = self.data[self.Ids[index]]
+        img = sample[:,:,:3]
+        ann = sample[:,:,3]
+        edge = sample[:,:,4]
 
         img, ann, edge = self.aug(img, ann, edge)
         return img, ann, edge
