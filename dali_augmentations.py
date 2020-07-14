@@ -102,6 +102,7 @@ class Augmentation(object):
         self.randompad = RandomPad(size, mean)
         self.normalize = Normalize(size, mean, std)
         self.flip = RandomFlip()
+        self.cast = ops.Cast(device="gpu", dtype=types.FLOAT)
 
     def __call__(self, imgs, anns):
         imgs = self.randomct(imgs)
@@ -109,6 +110,6 @@ class Augmentation(object):
             imgs, anns = self.randomrrc(imgs, anns)
         else:
             imgs, anns = self.randompad(imgs, anns)
-        # imgs = self.normalize(imgs)
+        imgs = self.normalize(imgs)
         imgs, anns= self.flip(imgs, anns)
-        return imgs, anns
+        return imgs, self.cast(anns)

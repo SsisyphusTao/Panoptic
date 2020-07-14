@@ -110,7 +110,7 @@ def dali_makes_miricle():
         images = data[0]["images"]
         anns = data[0]["anns"]
         break
-
+    print(images)
     edges = torch.zeros_like(anns)
     neighbour=torch.cat((anns[:,1:],anns[:,-1:]), 1)
     edges += (anns != (0 or neighbour)).type(torch.uint8)
