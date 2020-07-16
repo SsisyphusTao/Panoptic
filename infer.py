@@ -57,7 +57,7 @@ def get_affine_transform(center,
 def pre_process(image, meta=None):
     height, width = image.shape[0:2]
 
-    inp_height, inp_width = [224,224]
+    inp_height, inp_width = [512,512]
     c = np.array([width / 2., height / 2.], dtype=np.float32)
     s = max(height, width) * 1.0
 
@@ -93,11 +93,11 @@ def visualize(c):
         cv.putText(img, t, (i*50,20), 0, 0.5, tuple(text[t]), 1)
     return img
 
-model = 'checkpoints/ctnet_dla_001_2931.pth'
-imgpath = 'sheep-on-green-grass.jpg'
+model = 'checkpoints/ctnet_dla_018_1047.pth'
+imgpath = 'image3.jpg'
 
 heads = {'cls': 81,
-         'edge': 1}
+         'edge': 16}
 net = get_pose_net(34, heads).cuda()
 missing, unexpected = net.load_state_dict(torch.load(model))
 if missing:
@@ -115,12 +115,13 @@ with torch.no_grad():
 a = torch.softmax(output['cls'],1).squeeze()
 a = torch.argmax(a, 0)
 a = a.cpu().numpy().tolist()
-b = output['edge'].sigmoid().squeeze().cpu().numpy()
+b = output['edge'].cpu().sigmoid().squeeze()
+b = b.reshape(4,4,128,128).permute(2,0,3,1).reshape(512,512).numpy()
 b[np.where(b<0.3)] = 0
 b[np.where(b>0)] = 255
 
 edge = cv.cvtColor(b.astype(np.uint8), cv.COLOR_GRAY2BGR)
 seg = visualize(a)
 
-show = cv.hconcat([edge, seg])
-cv.imwrite('out.jpg', show)
+# show = cv.hconcat([edge, seg])
+cv.imwrite('out.jpg', edge)

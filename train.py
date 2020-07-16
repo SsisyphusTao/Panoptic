@@ -18,7 +18,7 @@ parser = argparse.ArgumentParser(
 train_set = parser.add_mutually_exclusive_group()
 parser.add_argument('--datafile', default=None,
                     help='Path of training set')
-parser.add_argument('--batch_size', default=18, type=int,
+parser.add_argument('--batch_size', default=20, type=int,
                     help='Batch size for training')
 parser.add_argument('--resume', type=str,
                     help='Checkpoint state_dict file to resume training from')
@@ -44,9 +44,9 @@ def train_one_epoch(loader, getloss, optimizer, epoch):
     t0 = time.clock()
     # load train data
     for iteration, batch in enumerate(loader):
-        images = batch[0]["images"].permute(0, 3, 1, 2)
+        images = batch[0]["images"]
         anns = batch[0]["anns"].squeeze()
-        edges = create_edge(anns).squeeze()
+        edges = create_edge(batch[0]["edges"].squeeze())
         # forward & backprop
         optimizer.zero_grad()
         loss, c, e = getloss(images, anns, edges)
@@ -59,7 +59,7 @@ def train_one_epoch(loader, getloss, optimizer, epoch):
             print('Loss: %.6f, cls: %.6f, edge: %.6f | iter: %03d | timer: %.4f sec. | epoch: %d' %
                     (loss_amount/iteration, c.mean().item(), e.mean().item(), iteration, t1-t0, epoch))
         t0 = t1
-    print('Loss: %.6f -------------------------------------------------------------------------------' % (loss_amount/iteration))
+    print('Device:%d  Loss: %.6f' % (images.device.index, (loss_amount/iteration)))
     return '_%d' % (loss_amount/iteration*1000)
 
 def train():
@@ -77,7 +77,7 @@ def train():
 
     start_time = time.clock()
     heads = {'cls': 81,
-             'edge': 1}
+             'edge': 16}
     net = get_pose_net(34, heads)
     if args.resume:
         missing, unexpected = net.load_state_dict({k.replace('module.',''):v 
@@ -88,23 +88,25 @@ def train():
             print('Unexpected:', unexpected)
     net.train()
 
-    optimizer = optim.Adam(net.parameters(), lr=args.lr)
-    # optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9,
-    #                       weight_decay=5e-4)
+    # optimizer = optim.Adam(net.parameters(), lr=args.lr)
+    optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9,
+                          weight_decay=5e-4)
 
-    args.lr = args.lr * N_gpu * (args.batch_size / 32)
+    # args.lr = args.lr * N_gpu * (args.batch_size / 32)
     for param_group in optimizer.param_groups:
         param_group['initial_lr'] = args.lr
-    adjust_learning_rate = optim.lr_scheduler.MultiStepLR(optimizer, [35, 75], 0.1, args.start_iter)
-    # adjust_learning_rate = optim.lr_scheduler.CosineAnnealingLR(optimizer, args.epochs, args.start_iter)
-    getloss = nn.parallel.DistributedDataParallel(NetwithLoss(net), device_ids=[args.local_rank], output_device=args.local_rank, find_unused_parameters=True)
+    # adjust_learning_rate = optim.lr_scheduler.MultiStepLR(optimizer, [35, 75], 0.1, args.start_iter)
+    adjust_learning_rate = optim.lr_scheduler.CosineAnnealingLR(optimizer, args.epochs, args.start_iter)
+    getloss = nn.parallel.DistributedDataParallel(NetwithLoss(net), device_ids=[args.local_rank], find_unused_parameters=True)
 
     if not args.local_rank:
         print('Loading the dataset...')
     external = panopticInputIterator(args.batch_size)
-    pipe = panopticPipeline(external, Augmentation(size=224), args.batch_size, args.num_workers, args.local_rank)
+    pipe = panopticPipeline(external, Augmentation(), args.batch_size, args.num_workers, args.local_rank)
     data_loader = DALIGenericIterator(pipe,
-                                      ["images", "anns"])
+                                      ["images", "anns", "edges"],
+                                      fill_last_batch = False,
+                                      size = external.size // N_gpu + 1)
     if not args.local_rank:
         print('Training CenterNet on:', 'dali-panoptic no.%d' % args.local_rank)
         print('Using the specified args:')

@@ -24,7 +24,7 @@ class panopticInputIterator(object):
         try:
             shard_id = torch.distributed.get_rank()
             num_shards = torch.distributed.get_world_size()
-        except RuntimeError:
+        except AssertionError:
             shard_id = 0
             num_shards = 1
 
@@ -85,8 +85,8 @@ class panopticPipeline(Pipeline):
         images = self.decode_imgs(self.images)
         anns = self.decode_anns(self.anns)
 
-        images, anns = self.augment(images, anns)
-        return (images, anns)
+        images, anns, edges = self.augment(images, anns)
+        return (images, anns, edges)
 
     def iter_setup(self):
         try:
