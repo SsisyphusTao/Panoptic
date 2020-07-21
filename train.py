@@ -18,7 +18,7 @@ parser = argparse.ArgumentParser(
 train_set = parser.add_mutually_exclusive_group()
 parser.add_argument('--datafile', default=None,
                     help='Path of training set')
-parser.add_argument('--batch_size', default=20, type=int,
+parser.add_argument('--batch_size', default=18, type=int,
                     help='Batch size for training')
 parser.add_argument('--resume', type=str,
                     help='Checkpoint state_dict file to resume training from')

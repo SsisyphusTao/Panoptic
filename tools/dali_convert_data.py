@@ -42,7 +42,7 @@ class SegInputIterator(object):
 
     def __iter__(self):
         self.i = 0
-        # shuffle(self.files)
+        shuffle(self.files)
         return self
 
     def __next__(self):

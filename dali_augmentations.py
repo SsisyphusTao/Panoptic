@@ -30,39 +30,39 @@ class RandomFlip(object):
     def __call__(self, images, anns=None):
         coin1 = self.toss_a_coin()
         coin2 = self.toss_a_coin()
-        images = self.flip(images, horizontal=coin1)
-        anns = self.flip(anns, horizontal=coin1)
+        images = self.flip(images, horizontal=coin1, vertical=coin2)
+        anns = self.flip(anns, horizontal=coin1, vertical=coin2)
         return images, anns
 
 class RandomResizedCrop(object):
     def __init__(self, size=512):
         self.size = size
-        # self.rt_img = ops.Rotate(device="gpu", fill_value=0, keep_size=True)
-        # self.rt_ann = ops.Rotate(device="gpu", fill_value=0, keep_size=True, interp_type=types.DALIInterpType.INTERP_NN)
-        self.cp = ops.Crop(device="gpu", crop=[self.size, self.size], output_dtype=types.UINT8)
-        self.rz_img = ops.Resize(device="gpu")
-        self.rz_ann = ops.Resize(device="gpu", interp_type=types.DALIInterpType.INTERP_NN)
+        self.rt_img = ops.Rotate(device="gpu", fill_value=0, keep_size=True)
+        self.rt_ann = ops.Rotate(device="gpu", fill_value=0, keep_size=True, interp_type=types.DALIInterpType.INTERP_NN)
+        # self.cp = ops.Crop(device="gpu", crop=[self.size, self.size], output_dtype=types.UINT8)
+        # self.rz_img = ops.Resize(device="gpu")
+        # self.rz_ann = ops.Resize(device="gpu", interp_type=types.DALIInterpType.INTERP_NN)
 
-        self.toss_a_coin = ops.CoinFlip(probability=0.5)
-        self.angle = ops.Uniform(range=[0, 90])
-        self.ratio = ops.Uniform(range=[1, 1.5])
-        self.pos = ops.Uniform(range=[0.2,0.8])
+        self.toss_a_coin = ops.CoinFlip(probability=0.1)
+        self.angle = ops.Uniform(range=[-10, 10])
+        # self.ratio = ops.Uniform(range=[1, 1.5])
+        # self.pos = ops.Uniform(range=[0.2,0.8])
 
     def __call__(self, images, anns):
-        # if self.toss_a_coin():
-        #     angle = self.angle()
-        #     images= self.rt_img(images, angle=angle)
-        #     anns = self.rt_ann(anns, angle=angle)
+        if self.toss_a_coin():
+            angle = self.angle()
+            images= self.rt_img(images, angle=angle)
+            anns = self.rt_ann(anns, angle=angle)
 
-        r = self.ratio()
-        x = self.pos()
-        y = self.pos()
+        # r = self.ratio()
+        # x = self.pos()
+        # y = self.pos()
 
-        images = self.rz_img(images, resize_shorter=r * self.size)
-        anns = self.rz_ann(anns, resize_shorter=r * self.size)
+        # images = self.rz_img(images, resize_shorter=r * self.size)
+        # anns = self.rz_ann(anns, resize_shorter=r * self.size)
 
-        images = self.cp(images, crop_pos_x=x, crop_pos_y=y)
-        anns = self.cp(anns, crop_pos_x=x, crop_pos_y=y)
+        # images = self.cp(images, crop_pos_x=x, crop_pos_y=y)
+        # anns = self.cp(anns, crop_pos_x=x, crop_pos_y=y)
 
         return images, anns
 
@@ -107,7 +107,7 @@ class Augmentation(object):
     def __call__(self, imgs, anns):
         imgs = self.randomct(imgs)
         # if self.toss_a_coin():
-        #     imgs, anns = self.randomrrc(imgs, anns)
+        imgs, anns = self.randomrrc(imgs, anns)
         # else:
         imgs, anns = self.randompad(imgs, anns)
         imgs, anns = self.flip(imgs, anns)

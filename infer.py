@@ -89,11 +89,9 @@ def visualize(c):
             else:
                 c[i][j] = [0, 0, 0]
     img = np.array(c, dtype=np.uint8)
-    for i, t in enumerate(tuple(text)):
-        cv.putText(img, t, (i*50,20), 0, 0.5, tuple(text[t]), 1)
-    return img
+    return img, text
 
-model = 'checkpoints/ctnet_dla_018_1047.pth'
+model = 'checkpoints/ctnet_dla_temp.pth'
 imgpath = 'image3.jpg'
 
 heads = {'cls': 81,
@@ -106,7 +104,7 @@ if unexpected:
     print('Unexpected:', unexpected)
 net.eval()
 
-img = cv.imread(imgpath)
+img = bg = cv.imread(imgpath)
 img = cv.cvtColor(img, cv.COLOR_BGR2RGB)
 img = pre_process(img)
 
@@ -116,12 +114,33 @@ a = torch.softmax(output['cls'],1).squeeze()
 a = torch.argmax(a, 0)
 a = a.cpu().numpy().tolist()
 b = output['edge'].cpu().sigmoid().squeeze()
-b = b.reshape(4,4,128,128).permute(2,0,3,1).reshape(512,512).numpy()
-b[np.where(b<0.3)] = 0
+# b = b.reshape(4,4,128,128).permute(2,0,3,1).reshape(512,512).numpy()
+b=b.sum(0).numpy()
+b[np.where(b<3)] = 0
 b[np.where(b>0)] = 255
 
 edge = cv.cvtColor(b.astype(np.uint8), cv.COLOR_GRAY2BGR)
-seg = visualize(a)
+cv.imwrite('edge.jpg', edge)
+seg, text = visualize(a)
+seg = cv.resize(seg, (512,512), interpolation=cv.INTER_NEAREST)
 
-# show = cv.hconcat([edge, seg])
-cv.imwrite('out.jpg', edge)
+# kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE,(10, 10))
+# dilated = cv.dilate(seg,kernel)
+show = np.where(edge>0, 0, seg)
+
+height, width = bg.shape[0:2]
+
+inp_height, inp_width = [512,512]
+c = np.array([width / 2., height / 2.], dtype=np.float32)
+s = max(height, width) * 1.0
+
+trans_input = get_affine_transform(c, s, 0, [inp_width, inp_height], inv=1)
+mask = cv.warpAffine(
+    show, trans_input, (width, height),
+    flags=cv.INTER_NEAREST)
+
+for i, t in enumerate(tuple(text)):
+    cv.putText(show, t, (i*150,30), 0, 1, tuple(text[t]), 2)
+
+cv.imwrite('out.jpg', cv.addWeighted(bg,1,mask,0.5,0))
+cv.imwrite('mid.jpg', cv.hconcat([seg,edge,show]))
