@@ -38,7 +38,9 @@ class NetwithLoss(torch.nn.Module):
         preds = self.net(imgs)
         edges = edges.reshape(-1,128,4,128,4).permute(0,2,4,1,3).flatten(1,2)
 
-        w = edges.sum(1).eq(0).float()
-        loss_cls = self.criterion(preds['cls'], anns.type(torch.long)) * w
+        w0 = edges.sum(1).eq(0).float()
+        w1 = edges.sum(1).gt(0).float()
+        loss_cls = self.criterion(preds['cls'], anns.type(torch.long))
+        loss_cls = loss_cls * w0 + loss_cls * w1 * 0.1
         loss_edge = self.criter_for_edge(preds['edge'].sigmoid_(), edges)
         return loss_cls.mean() + loss_edge, loss_cls, loss_edge

@@ -91,7 +91,7 @@ def visualize(c):
     img = np.array(c, dtype=np.uint8)
     return img, text
 
-model = 'checkpoints/ctnet_dla_temp.pth'
+model = 'checkpoints/ctnet_dla_001_865.pth'
 imgpath = 'image3.jpg'
 
 heads = {'cls': 81,
@@ -114,9 +114,8 @@ a = torch.softmax(output['cls'],1).squeeze()
 a = torch.argmax(a, 0)
 a = a.cpu().numpy().tolist()
 b = output['edge'].cpu().sigmoid().squeeze()
-# b = b.reshape(4,4,128,128).permute(2,0,3,1).reshape(512,512).numpy()
-b=b.sum(0).numpy()
-b[np.where(b<3)] = 0
+b = b.reshape(4,4,128,128).permute(2,0,3,1).reshape(512,512).numpy()
+b[np.where(b<0.3)] = 0
 b[np.where(b>0)] = 255
 
 edge = cv.cvtColor(b.astype(np.uint8), cv.COLOR_GRAY2BGR)
