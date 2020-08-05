@@ -18,7 +18,7 @@ parser = argparse.ArgumentParser(
 train_set = parser.add_mutually_exclusive_group()
 parser.add_argument('--datafile', default=None,
                     help='Path of training set')
-parser.add_argument('--batch_size', default=18, type=int,
+parser.add_argument('--batch_size', default=10, type=int,
                     help='Batch size for training')
 parser.add_argument('--resume', type=str,
                     help='Checkpoint state_dict file to resume training from')
@@ -46,7 +46,7 @@ def train_one_epoch(loader, getloss, optimizer, epoch):
     for iteration, batch in enumerate(loader):
         images = batch[0]["images"]
         anns = batch[0]["anns"].squeeze()
-        edges = create_edge(batch[0]["edges"].squeeze())
+        edges = create_edge(anns)
         # forward & backprop
         optimizer.zero_grad()
         loss, c, e = getloss(images, anns, edges)
@@ -80,8 +80,7 @@ def train():
              'edge': 16}
     net = get_pose_net(34, heads)
     if args.resume:
-        missing, unexpected = net.load_state_dict({k.replace('module.',''):v 
-        for k,v in torch.load(args.resume).items()}, strict=False)
+        missing, unexpected = net.load_state_dict(torch.load(args.resume, map_location='cpu'))
         if missing:
             print('Missing:', missing)
         if unexpected:
@@ -97,21 +96,24 @@ def train():
         param_group['initial_lr'] = args.lr
     # adjust_learning_rate = optim.lr_scheduler.MultiStepLR(optimizer, [35, 75], 0.1, args.start_iter)
     adjust_learning_rate = optim.lr_scheduler.CosineAnnealingLR(optimizer, args.epochs, args.start_iter)
-    getloss = nn.parallel.DistributedDataParallel(NetwithLoss(net), device_ids=[args.local_rank], find_unused_parameters=True)
+    if _distributed:
+        getloss = nn.parallel.DistributedDataParallel(NetwithLoss(net).cuda(), device_ids=[args.local_rank], find_unused_parameters=True)
+    else:
+        getloss = NetwithLoss(net).cuda()
 
     if not args.local_rank:
         print('Loading the dataset...')
     external = panopticInputIterator(args.batch_size)
     pipe = panopticPipeline(external, Augmentation(), args.batch_size, args.num_workers, args.local_rank)
     data_loader = DALIGenericIterator(pipe,
-                                      ["images", "anns", "edges"],
+                                      ["images", "anns"],
                                       fill_last_batch = False,
                                       size = external.size // N_gpu + 1)
     if not args.local_rank:
         print('Training CenterNet on:', 'dali-panoptic no.%d' % args.local_rank)
         print('Using the specified args:')
         print(args)
-
+    torch.cuda.empty_cache()
     # create batch iterator
     for iteration in range(args.start_iter + 1, args.epochs):
         loss = train_one_epoch(data_loader, getloss, optimizer, iteration)

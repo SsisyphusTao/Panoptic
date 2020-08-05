@@ -102,7 +102,7 @@ class Augmentation(object):
         self.normalize = Normalize(size, mean, std)
         self.flip = RandomFlip()
         self.cast = ops.Cast(device="gpu", dtype=types.FLOAT)
-        self.resize = ops.Resize(device = "gpu", resize_longer = size/4, interp_type=types.DALIInterpType.INTERP_NN)
+        # self.resize = ops.Resize(device = "gpu", resize_longer = size/4, interp_type=types.DALIInterpType.INTERP_NN)
 
     def __call__(self, imgs, anns):
         imgs = self.randomct(imgs)
@@ -113,4 +113,4 @@ class Augmentation(object):
         imgs, anns = self.flip(imgs, anns)
 
         imgs = self.normalize(imgs)
-        return imgs, self.resize(anns), anns
+        return imgs, anns

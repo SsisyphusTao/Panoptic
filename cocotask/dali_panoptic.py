@@ -85,8 +85,8 @@ class panopticPipeline(Pipeline):
         images = self.decode_imgs(self.images)
         anns = self.decode_anns(self.anns)
 
-        images, anns, edges = self.augment(images, anns)
-        return (images, anns, edges)
+        images, anns = self.augment(images, anns)
+        return (images, anns)
 
     def iter_setup(self):
         try:

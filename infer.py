@@ -91,8 +91,8 @@ def visualize(c):
     img = np.array(c, dtype=np.uint8)
     return img, text
 
-model = 'checkpoints/ctnet_dla_001_865.pth'
-imgpath = 'image3.jpg'
+model = 'checkpoints/ctnet_dla_002_1060.pth'
+imgpath = 'image2.jpg'
 
 heads = {'cls': 81,
          'edge': 16}
@@ -110,22 +110,21 @@ img = pre_process(img)
 
 with torch.no_grad():
     output = net(img.cuda())
-a = torch.softmax(output['cls'],1).squeeze()
+a = torch.nn.functional.interpolate(output['cls'].cpu(), size=[512,512], mode='bilinear', align_corners=True)
+a = torch.softmax(a,1).squeeze()
 a = torch.argmax(a, 0)
-a = a.cpu().numpy().tolist()
+a = a.numpy().tolist()
 b = output['edge'].cpu().sigmoid().squeeze()
-b = b.reshape(4,4,128,128).permute(2,0,3,1).reshape(512,512).numpy()
-b[np.where(b<0.3)] = 0
-b[np.where(b>0)] = 255
+b = b.reshape(4,4,128,128).permute(2,0,3,1).reshape(512,512).unsqueeze(0)
+b = b.permute(1,2,0).numpy()
 
-edge = cv.cvtColor(b.astype(np.uint8), cv.COLOR_GRAY2BGR)
-cv.imwrite('edge.jpg', edge)
+ret, binary = cv.threshold(b,0.35,255,cv.THRESH_BINARY)
+
+edge = cv.cvtColor(binary.astype(np.uint8), cv.COLOR_GRAY2BGR)
 seg, text = visualize(a)
-seg = cv.resize(seg, (512,512), interpolation=cv.INTER_NEAREST)
+# seg = cv.resize(seg, (512,512), interpolation=cv.INTER_NEAREST)
 
-# kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE,(10, 10))
-# dilated = cv.dilate(seg,kernel)
-show = np.where(edge>0, 0, seg)
+show = seg
 
 height, width = bg.shape[0:2]
 
@@ -142,4 +141,4 @@ for i, t in enumerate(tuple(text)):
     cv.putText(show, t, (i*150,30), 0, 1, tuple(text[t]), 2)
 
 cv.imwrite('out.jpg', cv.addWeighted(bg,1,mask,0.5,0))
-cv.imwrite('mid.jpg', cv.hconcat([seg,edge,show]))
+cv.imwrite('mid.jpg', cv.hconcat([seg,edge]))

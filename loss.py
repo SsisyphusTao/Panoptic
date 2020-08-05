@@ -3,7 +3,6 @@ import torch
 from torch.utils import data
 from cocotask import panopticDataset, collate
 from augmentations import Augmentation
-import h5py
 
 def focalloss(pred, gt):
   ''' Modified focal loss. Exactly the same as CornerNet.
@@ -36,11 +35,13 @@ class NetwithLoss(torch.nn.Module):
 
     def forward(self, imgs, anns, edges):
         preds = self.net(imgs)
-        edges = edges.reshape(-1,128,4,128,4).permute(0,2,4,1,3).flatten(1,2)
+        segs = torch.nn.functional.interpolate(preds['cls'], size=imgs.size()[2:], mode='bilinear', align_corners=True)
+        w = preds['edge'].reshape(-1,4,4,128,128).permute(0,3,1,4,2).flatten(3,4).flatten(1,2).sigmoid()
+        # edges = edges.reshape(-1,128,4,128,4).permute(0,2,4,1,3).flatten(1,2)
 
-        w0 = edges.sum(1).eq(0).float()
-        w1 = edges.sum(1).gt(0).float()
-        loss_cls = self.criterion(preds['cls'], anns.type(torch.long))
-        loss_cls = loss_cls * w0 + loss_cls * w1 * 0.1
-        loss_edge = self.criter_for_edge(preds['edge'].sigmoid_(), edges)
+        loss_cls = self.criterion(segs, anns.type(torch.long))
+        pt = torch.exp(-loss_cls)
+
+        loss_cls = loss_cls * ((1 - pt) ** 2) * (w.detach()+edges)
+        loss_edge = self.criter_for_edge(w, edges)
         return loss_cls.mean() + loss_edge, loss_cls, loss_edge
