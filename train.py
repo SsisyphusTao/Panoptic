@@ -1,5 +1,7 @@
 from cocotask.dali_panoptic import panopticInputIterator, panopticPipeline, create_edge
-from dali_augmentations import Augmentation
+from dali_augmentations import Augmentation as DALIAugmentation
+from augmentations import Augmentation
+from cocotask import panopticDataset, collate
 from nets import get_pose_net
 from loss import NetwithLoss
 
@@ -12,13 +14,15 @@ from nvidia.dali.plugin.pytorch import DALIGenericIterator
 import argparse
 import time
 import os
+import cv2 as cv
+import numpy as np
 
 parser = argparse.ArgumentParser(
     description='CenterNet task')
 train_set = parser.add_mutually_exclusive_group()
 parser.add_argument('--datafile', default=None,
                     help='Path of training set')
-parser.add_argument('--batch_size', default=10, type=int,
+parser.add_argument('--batch_size', default=128, type=int,
                     help='Batch size for training')
 parser.add_argument('--resume', type=str,
                     help='Checkpoint state_dict file to resume training from')
@@ -26,7 +30,7 @@ parser.add_argument('--epochs', default=70, type=int,
                     help='the number of training epochs')
 parser.add_argument('--start_iter', default=0, type=int,
                     help='Resume training at this iter')
-parser.add_argument('--num_workers', default=4, type=int,
+parser.add_argument('--num_workers', default=32, type=int,
                     help='Number of workers used in dataloading')
 parser.add_argument('--lr', '--learning-rate', default=1.25e-4, type=float,
                     help='initial learning rate')
@@ -44,22 +48,22 @@ def train_one_epoch(loader, getloss, optimizer, epoch):
     t0 = time.clock()
     # load train data
     for iteration, batch in enumerate(loader):
-        images = batch[0]["images"]
-        anns = batch[0]["anns"].squeeze()
-        edges = create_edge(anns)
+        # images = batch[0]["images"]
+        # anns = batch[0]["anns"].squeeze()
+        # edges = create_edge(anns)
         # forward & backprop
         optimizer.zero_grad()
-        loss, c, e = getloss(images, anns, edges)
+        loss, c, e = getloss(batch[0].cuda(non_blocking=True), batch[1].cuda(non_blocking=True), batch[2].cuda(non_blocking=True))
         loss = loss.mean()
         loss.backward()
         optimizer.step()
         t1 = time.clock()
         loss_amount += loss.item()
-        if iteration % 10 == 0 and not iteration == 0 and images.device.index == 0:
+        if iteration % 10 == 0 and not iteration == 0:# and images.device.index == 0:
             print('Loss: %.6f, cls: %.6f, edge: %.6f | iter: %03d | timer: %.4f sec. | epoch: %d' %
                     (loss_amount/iteration, c.mean().item(), e.mean().item(), iteration, t1-t0, epoch))
         t0 = t1
-    print('Device:%d  Loss: %.6f' % (images.device.index, (loss_amount/iteration)))
+    print('Device:%d  Loss: %.6f' % (0, (loss_amount/iteration)))
     return '_%d' % (loss_amount/iteration*1000)
 
 def train():
@@ -77,8 +81,8 @@ def train():
 
     start_time = time.clock()
     heads = {'cls': 81,
-             'edge': 16}
-    net = get_pose_net(34, heads)
+             'edge': 1}
+    net = get_pose_net(34, heads, down_ratio=1)
     if args.resume:
         missing, unexpected = net.load_state_dict(torch.load(args.resume, map_location='cpu'))
         if missing:
@@ -87,28 +91,36 @@ def train():
             print('Unexpected:', unexpected)
     net.train()
 
-    # optimizer = optim.Adam(net.parameters(), lr=args.lr)
-    optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9,
-                          weight_decay=5e-4)
-
+    # optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9,
+    #                       weight_decay=5e-4)
+    optimizer = optim.Adam(net.parameters(), lr=args.lr)
     # args.lr = args.lr * N_gpu * (args.batch_size / 32)
     for param_group in optimizer.param_groups:
         param_group['initial_lr'] = args.lr
-    # adjust_learning_rate = optim.lr_scheduler.MultiStepLR(optimizer, [35, 75], 0.1, args.start_iter)
-    adjust_learning_rate = optim.lr_scheduler.CosineAnnealingLR(optimizer, args.epochs, args.start_iter)
-    if _distributed:
-        getloss = nn.parallel.DistributedDataParallel(NetwithLoss(net).cuda(), device_ids=[args.local_rank], find_unused_parameters=True)
-    else:
-        getloss = NetwithLoss(net).cuda()
+    adjust_learning_rate = optim.lr_scheduler.MultiStepLR(optimizer, [35, 75], 0.1, args.start_iter)
+    # adjust_learning_rate = optim.lr_scheduler.CosineAnnealingLR(optimizer, args.epochs, args.start_iter)
 
     if not args.local_rank:
-        print('Loading the dataset...')
-    external = panopticInputIterator(args.batch_size)
-    pipe = panopticPipeline(external, Augmentation(), args.batch_size, args.num_workers, args.local_rank)
-    data_loader = DALIGenericIterator(pipe,
-                                      ["images", "anns"],
-                                      fill_last_batch = False,
-                                      size = external.size // N_gpu + 1)
+        print('Loading the dataset....', end='')
+    if _distributed:
+        getloss = nn.parallel.DistributedDataParallel(NetwithLoss(net).cuda(), device_ids=[args.local_rank], find_unused_parameters=True)
+        external = panopticInputIterator(args.batch_size)
+        pipe = panopticPipeline(external, DALIAugmentation(224), args.batch_size, args.num_workers, args.local_rank)
+        data_loader = DALIGenericIterator(pipe,
+                                          ["images", "anns"],
+                                          fill_last_batch = False,
+                                          size = external.size // N_gpu + 1)
+    else:
+        getloss = nn.DataParallel(NetwithLoss(net).cuda(), device_ids=[0,1,2,3,4,5,6,7])
+        dataset = panopticDataset(Augmentation())
+        data_loader = data.DataLoader(dataset, args.batch_size,
+                                  num_workers=args.num_workers,
+                                  shuffle=True, collate_fn=collate,
+                                  pin_memory=True)
+    
+    if not args.local_rank:
+        print('Finished!')
+
     if not args.local_rank:
         print('Training CenterNet on:', 'dali-panoptic no.%d' % args.local_rank)
         print('Using the specified args:')
@@ -117,7 +129,7 @@ def train():
     # create batch iterator
     for iteration in range(args.start_iter + 1, args.epochs):
         loss = train_one_epoch(data_loader, getloss, optimizer, iteration)
-        data_loader.reset()
+        dataset.reset()
         adjust_learning_rate.step()
         if (not (iteration-args.start_iter) == 0) and not args.local_rank:
             torch.save(net.state_dict(), args.save_folder + 'ctnet_dla_' +
