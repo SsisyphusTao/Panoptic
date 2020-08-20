@@ -439,7 +439,7 @@ class Warpaffine(object):
                          flags=cv2.INTER_NEAREST)
         edge = cv2.warpAffine(edge, trans_input, 
                          (self.size, self.size),
-                         flags=cv2.INTER_NEAREST)
+                         flags=cv2.INTER_LINEAR)
         
         return img, ann, edge
 

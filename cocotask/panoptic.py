@@ -1,34 +1,27 @@
+import cv2 as cv
 import numpy as np
+import json
 import h5py
 from os.path import join
+# from tqdm import tqdm
+from os import listdir
 
 from torch.utils.data import Dataset
 
 class panopticDataset(Dataset):
-    def __init__(self, f, aug):
+    def __init__(self, aug):
         super().__init__()
-        self.f = f
-        # with h5py.File(f, 'r') as data:
-        self.data = h5py.File(f, 'r')
-        self.Ids = list(self.data.keys())
+        self.Ids = [x.replace('.jpg', '') for x in listdir('/ai/ailab/Share/TaoData/coco/panoptic/converted/imgs/')]
         self.aug = aug
         np.random.shuffle(self.Ids)
 
     def __len__(self):
         return len(self.Ids)
-
-    def _get_border(self, border, size):
-        i = 1
-        while size - border // i <= border // i:
-            i *= 2
-        return border // i
     
     def __getitem__(self, index):
-        # with h5py.File(self.f, 'r') as data:
-        sample = self.data[self.Ids[index]]
-        img = sample[:,:,:3]
-        ann = sample[:,:,3]
-        edge = sample[:,:,4]
+        img = cv.cvtColor(cv.imread('/ai/ailab/Share/TaoData/coco/panoptic/converted/imgs/'+self.Ids[index]+'.jpg'), cv.COLOR_BGR2RGB)
+        ann = cv.cvtColor(cv.imread('/ai/ailab/Share/TaoData/coco/panoptic/converted/segs/'+self.Ids[index]+'.png'), cv.COLOR_BGR2GRAY)
+        edge = cv.cvtColor(cv.imread('/ai/ailab/Share/TaoData/coco/panoptic/converted/edges/'+self.Ids[index]+'.png'), cv.COLOR_BGR2GRAY)
 
         img, ann, edge = self.aug(img, ann, edge)
         return img, ann, edge

@@ -57,7 +57,7 @@ def get_affine_transform(center,
 def pre_process(image, meta=None):
     height, width = image.shape[0:2]
 
-    inp_height, inp_width = [512,512]
+    inp_height, inp_width = [224,224]
     c = np.array([width / 2., height / 2.], dtype=np.float32)
     s = max(height, width) * 1.0
 
@@ -91,12 +91,12 @@ def visualize(c):
     img = np.array(c, dtype=np.uint8)
     return img, text
 
-model = 'checkpoints/ctnet_dla_002_1060.pth'
-imgpath = 'image2.jpg'
+model = 'checkpoints/ctnet_dla_001_1643.pth'
+imgpath = 'sheep-on-green-grass.jpg'
 
 heads = {'cls': 81,
-         'edge': 16}
-net = get_pose_net(34, heads).cuda()
+         'edge': 1}
+net = get_pose_net(34, heads,down_ratio=1).cuda()
 missing, unexpected = net.load_state_dict(torch.load(model))
 if missing:
     print('Missing:', missing)
@@ -110,25 +110,25 @@ img = pre_process(img)
 
 with torch.no_grad():
     output = net(img.cuda())
-a = torch.nn.functional.interpolate(output['cls'].cpu(), size=[512,512], mode='bilinear', align_corners=True)
-a = torch.softmax(a,1).squeeze()
+# a = torch.nn.functional.interpolate(output['cls'].cpu(), size=[224,224], mode='bilinear', align_corners=True)
+a = torch.softmax(output['cls'].cpu(),1).squeeze()
 a = torch.argmax(a, 0)
 a = a.numpy().tolist()
-b = output['edge'].cpu().sigmoid().squeeze()
-b = b.reshape(4,4,128,128).permute(2,0,3,1).reshape(512,512).unsqueeze(0)
-b = b.permute(1,2,0).numpy()
+b = output['edge'].cpu().sigmoid().squeeze().numpy()
+# b = b.reshape(4,4,128,128).permute(2,0,3,1).reshape(224,224).unsqueeze(0)
+# b = b.permute(1,2,0)
 
 ret, binary = cv.threshold(b,0.35,255,cv.THRESH_BINARY)
 
 edge = cv.cvtColor(binary.astype(np.uint8), cv.COLOR_GRAY2BGR)
 seg, text = visualize(a)
-# seg = cv.resize(seg, (512,512), interpolation=cv.INTER_NEAREST)
+# seg = cv.resize(seg, (224,224), interpolation=cv.INTER_NEAREST)
 
 show = seg
 
 height, width = bg.shape[0:2]
 
-inp_height, inp_width = [512,512]
+inp_height, inp_width = [224,224]
 c = np.array([width / 2., height / 2.], dtype=np.float32)
 s = max(height, width) * 1.0
 
