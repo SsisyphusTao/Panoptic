@@ -7,6 +7,7 @@ import math
 
 class DeformableConv2DFunction(Function):
     @staticmethod
+    @torch.cuda.amp.custom_fwd(cast_inputs=torch.float32)
     def forward(ctx, input_tensor, weight, bias, offset, mask, stride, pad, dilation, deformable_groups):
         ctx.stride_h = stride[0]
         ctx.stride_w = stride[1]
@@ -31,6 +32,7 @@ class DeformableConv2DFunction(Function):
         return output
     
     @staticmethod
+    @torch.cuda.amp.custom_bwd
     def backward(ctx, *grad_outputs):
         input_tensor, weight, offset, mask, bias = ctx.saved_tensors
         grad_input, grad_weight, grad_bias, grad_offset, grad_mask = dcn_op_v2.backward(
@@ -96,7 +98,6 @@ class DeformableConv2DLayer(Module):
         stdv = 1. / math.sqrt(n)
         self.weight.data.uniform_(-stdv, stdv)
         self.bias.data.zero_()
-
     def forward(self, inputs):
         out = self.conv_offset_mask(inputs)
         o1, o2, mask = torch.chunk(out, 3, dim=1)

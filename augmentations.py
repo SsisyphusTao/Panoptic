@@ -313,7 +313,6 @@ class RandomMirror(object):
         if random.randint(2):
             image = image[:, ::-1, :].copy()
             ann = ann[:, ::-1].copy()
-            edge = edge[:, ::-1].copy()
         return image, ann, edge
 
 
@@ -437,10 +436,6 @@ class Warpaffine(object):
         ann = cv2.warpAffine(ann, trans_input, 
                          (self.size, self.size),
                          flags=cv2.INTER_NEAREST)
-        edge = cv2.warpAffine(edge, trans_input, 
-                         (self.size, self.size),
-                         flags=cv2.INTER_LINEAR)
-        
         return img, ann, edge
 
 class Augmentation(object):

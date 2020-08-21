@@ -32,6 +32,7 @@ class NetwithLoss(torch.nn.Module):
         self.criter_for_cls = torch.nn.CrossEntropyLoss()
         self.criter_for_edge = focalloss
         self.net = net
+    @torch.cuda.amp.autocast()
     def forward(self, imgs, anns, edges):
         preds = self.net(imgs)
         loss_cls = self.criter_for_cls(preds['cls'], anns.type(torch.long))

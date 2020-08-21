@@ -21,9 +21,8 @@ class panopticDataset(Dataset):
     def __getitem__(self, index):
         img = cv.cvtColor(cv.imread('/ai/ailab/Share/TaoData/coco/panoptic/converted/imgs/'+self.Ids[index]+'.jpg'), cv.COLOR_BGR2RGB)
         ann = cv.cvtColor(cv.imread('/ai/ailab/Share/TaoData/coco/panoptic/converted/segs/'+self.Ids[index]+'.png'), cv.COLOR_BGR2GRAY)
-        edge = cv.cvtColor(cv.imread('/ai/ailab/Share/TaoData/coco/panoptic/converted/edges/'+self.Ids[index]+'.png'), cv.COLOR_BGR2GRAY)
 
-        img, ann, edge = self.aug(img, ann, edge)
-        return img, ann, edge
+        img, ann, edge = self.aug(img, ann, None)
+        return img, ann
     name = 'panoptic-sementic'
 

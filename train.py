@@ -39,7 +39,7 @@ parser.add_argument('--local_rank', default=0, type=int,
         'or automatically set by using \'python -m multiproc\'.')
 args = parser.parse_args()
 # torch.set_default_tensor_type('torch.cuda.FloatTensor')
-
+scaler = torch.cuda.amp.GradScaler()
 # @profile
 def train_one_epoch(loader, getloss, optimizer, epoch):
     loss_amount = 0
@@ -48,15 +48,15 @@ def train_one_epoch(loader, getloss, optimizer, epoch):
     for iteration, batch in enumerate(loader):
         batch[0] = batch[0].cuda(non_blocking=True)
         batch[1] = batch[1].cuda(non_blocking=True)  
-        # batch[2] = batch[2].cuda(non_blocking=True)
         edges = create_edge(batch[1].squeeze()).unsqueeze(1)
         # forward & backprop
         optimizer.zero_grad()
         loss = getloss(batch[0],batch[1],edges).mean()
-        loss.backward()
-        optimizer.step()
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
         t1 = time.clock()
         loss_amount += loss.item()
+        scaler.update()
         if iteration % 10 == 0 and not iteration == 0 and not args.local_rank:
             print('Loss: %.6f | iter: %03d | timer: %.4f sec. | epoch: %d' %
                     (loss_amount/iteration, iteration, t1-t0, epoch))

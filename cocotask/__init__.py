@@ -31,9 +31,7 @@ cat_ids.update({0: 0})
 def collate(batch):
     imgs = []
     anns = []
-    edges= []
     for sample in batch:
         imgs.append(torch.from_numpy(sample[0]).permute(2,0,1))
         anns.append(torch.from_numpy(sample[1]))
-        edges.append(torch.from_numpy(sample[2]))
-    return torch.stack(imgs), torch.stack(anns), torch.stack(edges).unsqueeze(1)
+    return torch.stack(imgs), torch.stack(anns)
