@@ -46,12 +46,10 @@ def train_one_epoch(loader, getloss, optimizer, epoch):
     t0 = time.clock()
     # load train data
     for iteration, batch in enumerate(loader):
-        batch[0] = batch[0].cuda(non_blocking=True)
-        batch[1] = batch[1].cuda(non_blocking=True)  
-        edges = create_edge(batch[1].squeeze()).unsqueeze(1)
+        batch[0]["edges"] = create_edge(batch[0]["anns"].squeeze())
         # forward & backprop
         optimizer.zero_grad()
-        loss = getloss(batch[0],batch[1],edges).mean()
+        loss = getloss(**batch[0]).mean()
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         t1 = time.clock()
@@ -79,8 +77,8 @@ def train():
 
     start_time = time.clock()
     heads = {'cls': 81,
-             'edge': 1}
-    net = get_pose_net(34, heads, down_ratio=1)
+             'edge': 16}
+    net = get_pose_net(34, heads)
     if args.resume:
         missing, unexpected = net.load_state_dict(torch.load(args.resume, map_location='cpu'))
         if missing:
@@ -89,10 +87,8 @@ def train():
             print('Unexpected:', unexpected)
     net.train()
 
-    # optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9,
-    #                       weight_decay=5e-4)
-    optimizer = optim.Adam(net.parameters(), lr=args.lr)
-    # args.lr = args.lr * N_gpu * (args.batch_size / 32)
+    optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9,
+                          weight_decay=5e-4)
     for param_group in optimizer.param_groups:
         param_group['initial_lr'] = args.lr
     adjust_learning_rate = optim.lr_scheduler.MultiStepLR(optimizer, [90, 120], 0.1, args.start_iter)
@@ -102,15 +98,15 @@ def train():
         print('Loading the dataset....', end='')
     if _distributed:
         getloss = nn.parallel.DistributedDataParallel(NetwithLoss(net).cuda(), device_ids=[args.local_rank], find_unused_parameters=True)
-    #     external = panopticInputIterator(args.batch_size)
-    #     pipe = panopticPipeline(external, DALIAugmentation(224), args.batch_size, args.num_workers, args.local_rank)
-    #     data_loader = DALIGenericIterator(pipe,
-    #                                       ["images", "anns"],
-    #                                       fill_last_batch = False,
-    #                                       size = external.size // N_gpu + 1)
-    # else:
-    #     getloss = nn.DataParallel(NetwithLoss(net).cuda(), device_ids=[0,1,2,3,4,5,6,7])
-        dataset = panopticDataset(Augmentation())
+        external = panopticInputIterator(args.batch_size)
+        pipe = panopticPipeline(external, DALIAugmentation(512), args.batch_size, args.num_workers, args.local_rank)
+        data_loader = DALIGenericIterator(pipe,
+                                          ["images", "anns"],
+                                          fill_last_batch = False,
+                                          size = external.size // N_gpu + 1)
+    else:
+        getloss = nn.DataParallel(NetwithLoss(net).cuda(), device_ids=[0,1,2,3,4,5,6,7])
+        dataset = panopticDataset(Augmentation(512))
         sampler = torch.utils.data.distributed.DistributedSampler(dataset)
         data_loader = data.DataLoader(dataset, args.batch_size,
                                   num_workers=args.num_workers,
@@ -128,6 +124,7 @@ def train():
     # create batch iterator
     for iteration in range(args.start_iter + 1, args.epochs):
         loss = train_one_epoch(data_loader, getloss, optimizer, iteration)
+        data_loader.reset()
         adjust_learning_rate.step()
         if (not (iteration-args.start_iter) == 0) and not args.local_rank:
             torch.save(net.state_dict(), args.save_folder + 'ctnet_dla_' +

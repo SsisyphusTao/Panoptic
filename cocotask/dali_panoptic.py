@@ -36,10 +36,13 @@ class panopticInputIterator(object):
         self.files = self.files[self.data_set_len * shard_id // num_shards:
                                 self.data_set_len * (shard_id + 1) // num_shards]
         self.n = len(self.files)
+        self.seed = 0
 
     def __iter__(self):
         self.i = 0
+        np.random.seed(self.seed)
         np.random.shuffle(self.files)
+        self.seed += 1
         return self
 
     def __next__(self):

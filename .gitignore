@@ -4,4 +4,3 @@ checkpoints
 *.json
 view.py
 *.txt
-wrapper.sh
