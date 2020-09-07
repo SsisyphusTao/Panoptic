@@ -91,17 +91,32 @@ def visualize(c):
     img = np.array(c, dtype=np.uint8)
     return img, text
 
-model = 'bestOne.pth'
+def _nms(heat, kernel=3):
+    pad = (kernel - 1) // 2
+
+    hmax = torch.nn.functional.max_pool2d(
+        heat, (kernel, kernel), stride=1, padding=pad)
+    keep = (hmax == heat).float()
+    return heat * keep
+
+class Grad(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc = torch.nn.Sequential(
+                torch.nn.Conv2d(64, 256,
+                kernel_size=3, padding=1, bias=True),
+                torch.nn.ReLU(inplace=True),
+                torch.nn.Conv2d(256, 2, 
+                kernel_size=1, stride=1, 
+                padding=0, bias=True))
+    def forward(self, x):
+        return self.fc(x)
+
+model = 'checkpoints/dla_instance_001_125.pth'
 imgpath = 'sheep-on-green-grass.jpg'
 
-heads = {'cls': 81,
-        'edge': 16}
-net = get_pose_net(34, heads).cuda()
+net = get_pose_net(34, {'hm': 80, 'grad': 2}).cuda()
 missing, unexpected = net.load_state_dict(torch.load(model))
-if missing:
-    print('Missing:', missing)
-if unexpected:
-    print('Unexpected:', unexpected)
 net.eval()
 
 img = bg = cv.imread(imgpath)
@@ -110,35 +125,32 @@ img = pre_process(img)
 
 with torch.no_grad():
     output = net(img.cuda())
-a = torch.nn.functional.interpolate(output['cls'].cpu(), size=[512,512], mode='bilinear', align_corners=True)
-a = torch.softmax(a,1).squeeze()
-a = torch.argmax(a, 0)
-a = a.numpy().tolist()
-b = output['edge'].cpu().sigmoid().squeeze()
-b = b.reshape(4,4,128,128).permute(2,0,3,1).reshape(512,512).unsqueeze(0)
-b = b.permute(1,2,0).numpy()
+pred = _nms(output['hm']).squeeze()
+grad = output['grad'].squeeze()
+background = torch.ones(1,128,128).cuda() * 0.5
+pred = torch.cat([background, pred]).cpu()
+pred = torch.softmax(pred, 0)
+pred = torch.argmax(pred, 0)
 
-ret, binary = cv.threshold(b,0.35,255,cv.THRESH_BINARY)
-
-edge = cv.cvtColor(binary.astype(np.uint8), cv.COLOR_GRAY2BGR)
-seg, text = visualize(a)
+s = (grad[0].pow(2)+grad[1].pow(2)).sqrt().cpu().numpy()*128
+seg, text = visualize(pred.numpy().tolist())
 seg = cv.resize(seg, (512,512), interpolation=cv.INTER_NEAREST)
 
-show = seg
+# show = seg
 
-height, width = bg.shape[0:2]
+# height, width = bg.shape[0:2]
 
-inp_height, inp_width = [512,512]
-c = np.array([width / 2., height / 2.], dtype=np.float32)
-s = max(height, width) * 1.0
+# inp_height, inp_width = [512,512]
+# c = np.array([width / 2., height / 2.], dtype=np.float32)
+# s = max(height, width) * 1.0
 
-trans_input = get_affine_transform(c, s, 0, [inp_width, inp_height], inv=1)
-mask = cv.warpAffine(
-    show, trans_input, (width, height),
-    flags=cv.INTER_NEAREST)
+# trans_input = get_affine_transform(c, s, 0, [inp_width, inp_height], inv=1)
+# mask = cv.warpAffine(
+#     show, trans_input, (width, height),
+#     flags=cv.INTER_NEAREST)
 
 for i, t in enumerate(tuple(text)):
-    cv.putText(show, t, (i*150,30), 0, 1, tuple(text[t]), 2)
+    cv.putText(seg, t, (10,30*(i+1)), 0, 1, tuple(text[t]), 2)
 
-cv.imwrite('out.jpg', cv.addWeighted(bg,1,mask,0.5,0))
-cv.imwrite('mid.jpg', cv.hconcat([seg,edge]))
+cv.imwrite('out.jpg', s)
+cv.imwrite('mid.jpg', seg)

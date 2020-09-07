@@ -27,32 +27,39 @@ class RandomFlip(object):
         self.flip = ops.Flip(device="gpu")
         self.toss_a_coin = ops.CoinFlip(probability=0.5)
 
-    def __call__(self, images, anns=None):
+    def __call__(self, images, anns=None, gx=None, gy=None):
         coin1 = self.toss_a_coin()
         coin2 = self.toss_a_coin()
-        images = self.flip(images, horizontal=coin1, vertical=coin2)
-        anns = self.flip(anns, horizontal=coin1, vertical=coin2)
-        return images, anns
+        images, anns, gx, gy = self.flip([images, anns, gx, gy], horizontal=coin1, vertical=coin2)
+        return images, anns, gx, gy, coin1, coin2
 
 class RandomPad(object):
     def __init__(self, size, fill_value):
-        self.rz_img = ops.Resize(device = "gpu")
-        self.rz_ann = ops.Resize(device = "gpu", interp_type=types.DALIInterpType.INTERP_NN)
-        self.pt_img = ops.Paste(device = "gpu", ratio = 1, min_canvas_size = size, fill_value=fill_value)
-        self.pt_ann = ops.Paste(device = "gpu", ratio = 1, min_canvas_size = size, fill_value=0)
-        self.cp_img = ops.Crop(device="gpu", crop_h=size, crop_w=size, fill_values=fill_value, out_of_bounds_policy='pad')
-        self.cp_ann = ops.Crop(device="gpu", crop_h=size, crop_w=size, fill_values=0, out_of_bounds_policy='pad')
-        self.pos = ops.Uniform(range=[0.3, 0.7])
-        self.ratio = ops.Uniform(range=[0.5*size, 1.5*size])
+        self.rz_img = ops.Resize(device = "gpu", resize_longer = size)
+        self.rz_ann = ops.Resize(device = "gpu", resize_longer = size, interp_type=types.DALIInterpType.INTERP_NN)
 
-    def __call__(self, images, anns):
+        self.cp_img = ops.Crop(device="gpu", fill_values=fill_value, out_of_bounds_policy='pad')
+        self.cp_ann = ops.Crop(device="gpu", fill_values=0, out_of_bounds_policy='pad')
+
+        self.size = ops.Constant(fdata=size)
+        self.pos = ops.Uniform(range=[0, 1])
+        self.scale = ops.Uniform(range=[0.667, 1.5])
+        self.shape = ops.Shapes(device="gpu")
+
+    def __call__(self, images, anns, gx, gy):
         x = self.pos()
         y = self.pos()
-        r = self.ratio()
-        images = self.cp_img(self.pt_img(self.rz_img(images, resize_longer=r)), crop_pos_x=x, crop_pos_y=y) 
-        anns = self.cp_ann(self.pt_ann(self.rz_ann(anns, resize_longer=r)), crop_pos_x=x, crop_pos_y=y)
-        
-        return images, anns
+        s = self.scale()
+        window = self.size() * s
+        shape = (self.shape(images) - window)/s
+
+        images = self.cp_img(images, crop_w=window, crop_h=window, crop_pos_x=x, crop_pos_y=y)
+        anns, gx, gy = self.cp_ann([anns, gx, gy], crop_w=window, crop_h=window, crop_pos_x=x, crop_pos_y=y)
+
+        images = self.rz_img(images)
+        anns, gx, gy = self.rz_ann([anns, gx, gy])
+
+        return images, anns, gx, gy, x*shape, y*shape, s
 
 class Normalize(object):
     def __init__(self, size, mean=None, std=None):
@@ -70,16 +77,18 @@ class Normalize(object):
         return self.nl(images)
 
 class Augmentation(object):
-    def __init__(self, size=512, mean=[0.485 * 255, 0.456 * 255, 0.406 * 255], std=[0.229 * 255, 0.224 * 255, 0.225 * 255]):
+    def __init__(self, size=512, mean=[0.485 * 255, 0.456 * 255, 0.406 * 255], std=[0.229, 0.224, 0.225]):
         self.toss_a_coin = ops.CoinFlip(probability=0.5)
         self.randomct = RandomColorTwist()
         self.randompad = RandomPad(size, mean)
         self.normalize = Normalize(size, mean, std)
         self.flip = RandomFlip()
+        self.resize = ops.Resize(device = "gpu", resize_longer = size//4, interp_type=types.DALIInterpType.INTERP_NN)
 
-    def __call__(self, imgs, anns):
+    def __call__(self, imgs, anns, gx, gy):
         imgs = self.randomct(imgs)
-        imgs, anns = self.randompad(imgs, anns)
-        imgs, anns = self.flip(imgs, anns)
+        imgs, anns, gx, gy, x, y, s = self.randompad(imgs, anns, gx, gy)
+        imgs, anns, gx, gy, c1, c2 = self.flip(imgs, anns, gx, gy)
         imgs = self.normalize(imgs)
-        return imgs, anns
+        anns, gx, gy = self.resize([anns, gx, gy])
+        return imgs, anns, gx, gy, x, y, s, c1, c2

@@ -4,3 +4,5 @@ checkpoints
 *.json
 view.py
 *.txt
+pretrain_dla.pth
+wrapper.sh

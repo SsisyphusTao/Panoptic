@@ -1,4 +1,4 @@
-from cocotask.dali_panoptic import panopticInputIterator, panopticPipeline, create_edge
+from cocotask.dali_panoptic import panopticInputIterator, panopticPipeline, grad_preprocess
 from dali_augmentations import Augmentation as DALIAugmentation
 from augmentations import Augmentation
 from cocotask import panopticDataset, collate
@@ -38,26 +38,26 @@ parser.add_argument('--local_rank', default=0, type=int,
     help='Used for multi-process training. Can either be manually set ' +
         'or automatically set by using \'python -m multiproc\'.')
 args = parser.parse_args()
-# torch.set_default_tensor_type('torch.cuda.FloatTensor')
 scaler = torch.cuda.amp.GradScaler()
-# @profile
+
 def train_one_epoch(loader, getloss, optimizer, epoch):
     loss_amount = 0
     t0 = time.clock()
     # load train data
     for iteration, batch in enumerate(loader):
-        batch[0]["edges"] = create_edge(batch[0]["anns"].squeeze())
         # forward & backprop
         optimizer.zero_grad()
-        loss = getloss(**batch[0]).mean()
+        gx, gy = grad_preprocess(batch[0])
+        loss_c, loss_g = getloss(batch[0]['images'], batch[0]['anns'], gx, gy)
+        loss = loss_c + loss_g
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         t1 = time.clock()
         loss_amount += loss.item()
         scaler.update()
         if iteration % 10 == 0 and not iteration == 0 and not args.local_rank:
-            print('Loss: %.6f | iter: %03d | timer: %.4f sec. | epoch: %d' %
-                    (loss_amount/iteration, iteration, t1-t0, epoch))
+            print('Loss: %.4f, cls: %.4f, grad: %.4f | iter: %03d | timer: %.4f sec. | epoch: %d' %
+                    (loss_amount/iteration, loss_c.item(), loss_g.item(), iteration, t1-t0, epoch))
         t0 = t1
     print('Device:%d  Loss: %.6f' % (args.local_rank, (loss_amount/iteration)))
     return '_%d' % (loss_amount/iteration*1000)
@@ -74,21 +74,13 @@ def train():
         N_gpu = torch.distributed.get_world_size()
     else:
         N_gpu = 1
-
-    start_time = time.clock()
-    heads = {'cls': 81,
-             'edge': 16}
-    net = get_pose_net(34, heads)
+    net = get_pose_net(34, {'hm': 80, 'grad':2})
     if args.resume:
-        missing, unexpected = net.load_state_dict(torch.load(args.resume, map_location='cpu'))
-        if missing:
-            print('Missing:', missing)
-        if unexpected:
-            print('Unexpected:', unexpected)
-    net.train()
+        missing, unexpected = net.load_state_dict(torch.load(args.resume, map_location='cpu'), strict=False)
 
-    optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9,
-                          weight_decay=5e-4)
+    # optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9,
+    #                       weight_decay=5e-4)
+    optimizer = torch.optim.Adam(net.grad.parameters(), args.lr)
     for param_group in optimizer.param_groups:
         param_group['initial_lr'] = args.lr
     adjust_learning_rate = optim.lr_scheduler.MultiStepLR(optimizer, [90, 120], 0.1, args.start_iter)
@@ -101,8 +93,8 @@ def train():
         external = panopticInputIterator(args.batch_size)
         pipe = panopticPipeline(external, DALIAugmentation(512), args.batch_size, args.num_workers, args.local_rank)
         data_loader = DALIGenericIterator(pipe,
-                                          ["images", "anns"],
-                                          fill_last_batch = False,
+                                          ["images", "anns", "gx", "gy", "x", "y", "s", "c1", "c2"],
+                                          fill_last_batch = False, auto_reset=True,
                                           size = external.size // N_gpu + 1)
     else:
         getloss = nn.DataParallel(NetwithLoss(net).cuda(), device_ids=[0,1,2,3,4,5,6,7])
@@ -124,15 +116,14 @@ def train():
     # create batch iterator
     for iteration in range(args.start_iter + 1, args.epochs):
         loss = train_one_epoch(data_loader, getloss, optimizer, iteration)
-        data_loader.reset()
+        external.shuffle()
         adjust_learning_rate.step()
-        if (not (iteration-args.start_iter) == 0) and not args.local_rank:
-            torch.save(net.state_dict(), args.save_folder + 'ctnet_dla_' +
-                       '%03d'%iteration + loss + '.pth')
-    if not args.local_rank:
-        torch.save(net.state_dict(),
-                    args.save_folder + 'ctnet_dla_end' + loss + '.pth')
-    end_time=time.clock()
+        if (not (iteration-args.start_iter) == 0):
+            torch.distributed.barrier()
+            if not args.local_rank:
+                torch.save(net.state_dict(), args.save_folder + 'dla_instance_' +
+                        '%03d'%iteration + loss + '.pth')
+                print('Save model %03d'%iteration+loss+'.pth')
 
 if __name__ == '__main__':
     train()
