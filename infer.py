@@ -67,9 +67,9 @@ def pre_process(image, meta=None):
       resized_image, trans_input, (inp_width, inp_height),
       flags=cv.INTER_LINEAR)
 
-    mean=np.array([0.40789654, 0.44719302, 0.47026115],
+    mean=np.array([0.47026115, 0.40789654, 0.44719302],
                    dtype=np.float32)
-    std=np.array([0.28863828, 0.27408164, 0.27809835],
+    std=np.array([0.27809835, 0.28863828, 0.27408164],
                    dtype=np.float32)
 
     inp_image = (inp_image.astype(np.float32) / 255. - mean) / std
@@ -99,23 +99,10 @@ def _nms(heat, kernel=3):
     keep = (hmax == heat).float()
     return heat * keep
 
-class Grad(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.fc = torch.nn.Sequential(
-                torch.nn.Conv2d(64, 256,
-                kernel_size=3, padding=1, bias=True),
-                torch.nn.ReLU(inplace=True),
-                torch.nn.Conv2d(256, 2, 
-                kernel_size=1, stride=1, 
-                padding=0, bias=True))
-    def forward(self, x):
-        return self.fc(x)
+model = 'checkpoints/dla_instance_003_471.pth'
+imgpath = 'images/sheep-on-green-grass.jpg'
 
-model = 'checkpoints/dla_instance_001_125.pth'
-imgpath = 'sheep-on-green-grass.jpg'
-
-net = get_pose_net(34, {'hm': 80, 'grad': 2}).cuda()
+net = get_pose_net(34, {'cls': 81, 'grad': 2}).cuda()
 missing, unexpected = net.load_state_dict(torch.load(model))
 net.eval()
 
@@ -125,17 +112,18 @@ img = pre_process(img)
 
 with torch.no_grad():
     output = net(img.cuda())
-pred = _nms(output['hm']).squeeze()
+pred = output['cls'].squeeze()
 grad = output['grad'].squeeze()
-background = torch.ones(1,128,128).cuda() * 0.5
-pred = torch.cat([background, pred]).cpu()
-pred = torch.softmax(pred, 0)
-pred = torch.argmax(pred, 0)
+# background = torch.ones(1,128,128).cuda() * 0.5
+# pred = torch.cat([background, pred]).cpu()
+# pred = torch.softmax(pred, 0)
+pred = torch.argmax(pred, 0).cpu()
+
 
 s = (grad[0].pow(2)+grad[1].pow(2)).sqrt().cpu().numpy()*128
 seg, text = visualize(pred.numpy().tolist())
 seg = cv.resize(seg, (512,512), interpolation=cv.INTER_NEAREST)
-
+print(text)
 # show = seg
 
 # height, width = bg.shape[0:2]
@@ -152,5 +140,5 @@ seg = cv.resize(seg, (512,512), interpolation=cv.INTER_NEAREST)
 for i, t in enumerate(tuple(text)):
     cv.putText(seg, t, (10,30*(i+1)), 0, 1, tuple(text[t]), 2)
 
-cv.imwrite('out.jpg', s)
-cv.imwrite('mid.jpg', seg)
+cv.imwrite('images/out.jpg', s)
+cv.imwrite('images/mid.jpg', seg)

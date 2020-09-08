@@ -77,7 +77,7 @@ class Normalize(object):
         return self.nl(images)
 
 class Augmentation(object):
-    def __init__(self, size=512, mean=[0.485 * 255, 0.456 * 255, 0.406 * 255], std=[0.229, 0.224, 0.225]):
+    def __init__(self, size=512, mean=[0.47026115*255, 0.40789654*255, 0.44719302*255], std=[0.27809835*255, 0.28863828*255, 0.27408164*255]):
         self.toss_a_coin = ops.CoinFlip(probability=0.5)
         self.randomct = RandomColorTwist()
         self.randompad = RandomPad(size, mean)

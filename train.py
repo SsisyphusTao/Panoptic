@@ -1,4 +1,4 @@
-from cocotask.dali_panoptic import panopticInputIterator, panopticPipeline, grad_preprocess
+from cocotask.dali_panoptic import panopticInputIterator, panopticPipeline, grad_preprocess, create_edge
 from dali_augmentations import Augmentation as DALIAugmentation
 from augmentations import Augmentation
 from cocotask import panopticDataset, collate
@@ -74,13 +74,13 @@ def train():
         N_gpu = torch.distributed.get_world_size()
     else:
         N_gpu = 1
-    net = get_pose_net(34, {'hm': 80, 'grad':2})
+    net = get_pose_net(34, {'cls': 81, 'grad':2})
     if args.resume:
         missing, unexpected = net.load_state_dict(torch.load(args.resume, map_location='cpu'), strict=False)
 
     # optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9,
     #                       weight_decay=5e-4)
-    optimizer = torch.optim.Adam(net.grad.parameters(), args.lr)
+    optimizer = torch.optim.Adam(net.parameters(), args.lr)
     for param_group in optimizer.param_groups:
         param_group['initial_lr'] = args.lr
     adjust_learning_rate = optim.lr_scheduler.MultiStepLR(optimizer, [90, 120], 0.1, args.start_iter)

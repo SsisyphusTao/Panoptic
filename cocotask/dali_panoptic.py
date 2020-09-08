@@ -36,7 +36,7 @@ def create_edge(anns):
     edges += (anns != (0 or neighbour)).type(torch.uint8)
     neighbour=torch.cat((anns[:,:,1:], anns[:,:,-1:]), 2)
     edges += (anns != (0 or neighbour)).type(torch.uint8)
-    return edges
+    return edges.squeeze()
 
 def grad_preprocess(batch):
     reverse = lambda x : x[...,0]*100+x[...,1]*10+x[...,2]
