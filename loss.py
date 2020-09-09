@@ -41,21 +41,26 @@ class NetwithLoss(torch.nn.Module):
     def __init__(self, net):
         super().__init__()
         self._sigmoid = lambda x: torch.clamp(x.sigmoid_(), min=1e-4, max=1-1e-4)
-        self.onehot = lambda x: torch.nn.functional.one_hot(x, 81).permute(0,3,1,2)#[:,1:,:,:]
-        self.criter_for_cls = torch.nn.CrossEntropyLoss()
-        self.criter_for_grad = torch.nn.MSELoss()
+        self.onehot = lambda x: torch.nn.functional.one_hot(x, 81).permute(0,3,1,2)[:,1:,:,:]
+        self.criter_for_cls = focalloss
+        self.criter_for_grad = torch.nn.L1Loss()
         self.net = net
         self.net.train()
     @torch.cuda.amp.autocast()
     def forward(self, images, anns, gx, gy):
         preds = self.net(images)
 
-        loss_grad = self.criter_for_grad(preds['grad'], torch.stack([gx, gy], 1))#, anns.gt(0).float())
+        loss_grad = self.criter_for_grad(preds['grad'].tanh(), torch.stack([gx, gy], 1))
 
         anns = anns.type(torch.long).squeeze()
-        # anns = self.onehot(anns)
+        anns = self.onehot(anns)
 
-        loss_cls = self.criter_for_cls(preds['cls'], anns)
+        w = (gx.pow(2)+gy.pow(2)).sqrt()
+        w = w.unsqueeze(1).expand_as(anns)
+
+        gt = anns.where(w<0.01, torch.zeros_like(anns))
+        w = w.where(anns>0, torch.ones_like(w))
+        loss_cls = self.criter_for_cls(self._sigmoid(preds['hm']), gt, w)
         return loss_cls, loss_grad
 
 

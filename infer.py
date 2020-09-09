@@ -99,10 +99,10 @@ def _nms(heat, kernel=3):
     keep = (hmax == heat).float()
     return heat * keep
 
-model = 'checkpoints/dla_instance_003_471.pth'
-imgpath = 'images/sheep-on-green-grass.jpg'
+model = 'checkpoints/dla_instance_040_847.pth'
+imgpath = 'images/image1.jpg'
 
-net = get_pose_net(34, {'cls': 81, 'grad': 2}).cuda()
+net = get_pose_net(34, {'hm': 80, 'grad': 2}).cuda()
 missing, unexpected = net.load_state_dict(torch.load(model))
 net.eval()
 
@@ -112,16 +112,19 @@ img = pre_process(img)
 
 with torch.no_grad():
     output = net(img.cuda())
-pred = output['cls'].squeeze()
-grad = output['grad'].squeeze()
-# background = torch.ones(1,128,128).cuda() * 0.5
-# pred = torch.cat([background, pred]).cpu()
+pred = output['hm'].squeeze().sigmoid().cpu()
+grad = output['grad'].squeeze().tanh().cpu()
+background = torch.ones(1,128,128) * 0.2
+pred = torch.cat([background, pred])
 # pred = torch.softmax(pred, 0)
-pred = torch.argmax(pred, 0).cpu()
+pred = torch.argmax(pred, 0)
+# clamp= lambda x : min(max(int(x), 127),0)
+# gx = torch.from_numpy(np.expand_dims(np.array([x for x in range(128)]), 0).repeat(128, 0)) + grad[0]*128
+# gy = torch.from_numpy(np.expand_dims(np.array([x for x in range(128)]), 1).repeat(128, 1)) + grad[1]*128
+# pred = gx.map_(gy.cpu(), lambda x,y:pred[clamp(x)][clamp(y)])
 
-
-s = (grad[0].pow(2)+grad[1].pow(2)).sqrt().cpu().numpy()*128
-seg, text = visualize(pred.numpy().tolist())
+s = (grad[0].pow(2)+grad[1].pow(2)).sqrt().cpu().numpy()*128*2
+seg, text = visualize(pred.numpy().astype(np.int).tolist())
 seg = cv.resize(seg, (512,512), interpolation=cv.INTER_NEAREST)
 print(text)
 # show = seg
