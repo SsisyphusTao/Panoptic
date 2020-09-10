@@ -23,7 +23,7 @@ def view_sample(**kwargs):
         elif kwargs[i].dim() == 3:
             img = cv.cvtColor(kwargs[i][0].detach().cpu().numpy(), cv.COLOR_GRAY2BGR).astype(np.uint8)
             out.append(img)
-    cv.imwrite('debug.jpg', cv.hconcat(out))
+    cv.imwrite('images/debug.jpg', cv.hconcat(out))
     raise RuntimeError
 
 def create_edge(anns):
@@ -47,19 +47,26 @@ def grad_preprocess(batch):
     x = batch['x'][:,1].unsqueeze(-1).unsqueeze(-1).expand_as(gx)
     y = batch['y'][:,0].unsqueeze(-1).unsqueeze(-1).expand_as(gy)
 
-    gx = torch.clamp_min_(torch.where(gx>0, gx/s-x, gx), 0)/4
-    gy = torch.clamp_min_(torch.where(gy>0, gy/s-y, gy), 0)/4
+    gx = torch.where(gx>0, gx/s-x, gx)/4
+    gy = torch.where(gy>0, gy/s-y, gy)/4
 
     c1 = batch['c1'].unsqueeze(-1).expand_as(gx).cuda()
     c2 = batch['c2'].unsqueeze(-1).expand_as(gy).cuda()
 
-    gx = torch.where(gx*c1>0, 128-gx, gx)
-    gy = torch.where(gy*c2>0, 128-gy, gy)
+    gx = torch.where(gx*c1>0, 127-gx, gx).clamp(0,127)
+    gy = torch.where(gy*c2>0, 127-gy, gy).clamp(0,127)
 
     x = torch.from_numpy(np.expand_dims(np.array([x for x in range(128)]), 0).repeat(128, 0)).cuda()
     y = torch.from_numpy(np.expand_dims(np.array([x for x in range(128)]), 1).repeat(128, 1)).cuda()
 
-    return torch.where(gx>0, gx-x, gx)/128, torch.where(gy>0, gy-y, gy)/128
+    index = torch.stack([gx,gy], -1)
+    index = torch.cat([index, batch['anns']], -1).flatten(1,2).type(torch.long)
+    index = index.unique(dim=1)
+    dim = torch.tensor([[x] for x in range(index.size()[0])], dtype=torch.long).cuda()
+    dim = dim.expand(-1, index.size()[1])
+    ann = torch.zeros_like(gx).type(torch.long)
+    ann.index_put_((dim,index[...,1],index[...,0]), index[...,-1])
+    return torch.where(gx>0, gx-x, gx)/127, torch.where(gy>0, gy-y, gy)/127, ann
 
 class panopticInputIterator(object):
     def __init__(self, batch_size):

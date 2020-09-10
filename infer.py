@@ -99,7 +99,7 @@ def _nms(heat, kernel=3):
     keep = (hmax == heat).float()
     return heat * keep
 
-model = 'checkpoints/dla_instance_040_847.pth'
+model = 'checkpoints/dla_instance_042_1625.pth'
 imgpath = 'images/image1.jpg'
 
 net = get_pose_net(34, {'hm': 80, 'grad': 2}).cuda()
@@ -112,20 +112,22 @@ img = pre_process(img)
 
 with torch.no_grad():
     output = net(img.cuda())
-pred = output['hm'].squeeze().sigmoid().cpu()
-grad = output['grad'].squeeze().tanh().cpu()
-background = torch.ones(1,128,128) * 0.2
+pred = _nms(output['hm'].squeeze().sigmoid()).cpu()
+grad = output['grad'].squeeze().tanh().cpu()*127*2
+background = torch.ones(1,128,128)*0.2
 pred = torch.cat([background, pred])
-# pred = torch.softmax(pred, 0)
+pred = torch.softmax(pred, 0)
 pred = torch.argmax(pred, 0)
 # clamp= lambda x : min(max(int(x), 127),0)
-# gx = torch.from_numpy(np.expand_dims(np.array([x for x in range(128)]), 0).repeat(128, 0)) + grad[0]*128
-# gy = torch.from_numpy(np.expand_dims(np.array([x for x in range(128)]), 1).repeat(128, 1)) + grad[1]*128
-# pred = gx.map_(gy.cpu(), lambda x,y:pred[clamp(x)][clamp(y)])
+# gx = torch.from_numpy(np.expand_dims(np.array([x for x in range(128)]), 0).repeat(128, 0)) + grad[0]
+# gy = torch.from_numpy(np.expand_dims(np.array([x for x in range(128)]), 1).repeat(128, 1)) + grad[1]
+# pred = gx.map_(gy, lambda x,y:pred[clamp(y)][clamp(x)])
 
-s = (grad[0].pow(2)+grad[1].pow(2)).sqrt().cpu().numpy()*128*2
+s = (grad[0].pow(2)+grad[1].pow(2)).sqrt().numpy()
 seg, text = visualize(pred.numpy().astype(np.int).tolist())
 seg = cv.resize(seg, (512,512), interpolation=cv.INTER_NEAREST)
+s = cv.resize(s, (512,512), interpolation=cv.INTER_NEAREST).astype(np.uint8)
+s = cv.cvtColor(s, cv.COLOR_GRAY2RGB)
 print(text)
 # show = seg
 
@@ -143,5 +145,4 @@ print(text)
 for i, t in enumerate(tuple(text)):
     cv.putText(seg, t, (10,30*(i+1)), 0, 1, tuple(text[t]), 2)
 
-cv.imwrite('images/out.jpg', s)
-cv.imwrite('images/mid.jpg', seg)
+cv.imwrite('images/out.jpg', cv.hconcat([seg,s]))

@@ -52,15 +52,13 @@ class NetwithLoss(torch.nn.Module):
 
         loss_grad = self.criter_for_grad(preds['grad'].tanh(), torch.stack([gx, gy], 1))
 
-        anns = anns.type(torch.long).squeeze()
         anns = self.onehot(anns)
 
         w = (gx.pow(2)+gy.pow(2)).sqrt()
         w = w.unsqueeze(1).expand_as(anns)
 
-        gt = anns.where(w<0.01, torch.zeros_like(anns))
         w = w.where(anns>0, torch.ones_like(w))
-        loss_cls = self.criter_for_cls(self._sigmoid(preds['hm']), gt, w)
+        loss_cls = self.criter_for_cls(self._sigmoid(preds['hm']), anns, w)
         return loss_cls, loss_grad
 
 
