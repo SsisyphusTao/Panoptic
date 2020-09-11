@@ -91,6 +91,16 @@ def visualize(c):
     img = np.array(c, dtype=np.uint8)
     return img, text
 
+def _gather_feat(feat, ind, mask=None):
+    dim  = feat.size(2)
+    ind  = ind.unsqueeze(2).expand(ind.size(0), ind.size(1), dim)
+    feat = feat.gather(1, ind)
+    if mask is not None:
+        mask = mask.unsqueeze(2).expand_as(feat)
+        feat = feat[mask]
+        feat = feat.view(-1, dim)
+    return feat
+
 def _nms(heat, kernel=3):
     pad = (kernel - 1) // 2
 
@@ -99,8 +109,26 @@ def _nms(heat, kernel=3):
     keep = (hmax == heat).float()
     return heat * keep
 
-model = 'checkpoints/dla_instance_042_1625.pth'
-imgpath = 'images/image1.jpg'
+def _topk(scores, K=40):
+    batch, cat, height, width = scores.size()
+      
+    topk_scores, topk_inds = torch.topk(scores.view(batch, cat, -1), K)
+
+    topk_inds = topk_inds % (height * width)
+    topk_ys   = (topk_inds.true_divide(width)).int().float()
+    topk_xs   = (topk_inds % width).int().float()
+      
+    topk_score, topk_ind = torch.topk(topk_scores.view(batch, -1), K)
+    topk_clses = (topk_ind.true_divide(K)).int()
+    topk_inds = _gather_feat(
+        topk_inds.view(batch, -1, 1), topk_ind).view(batch, K)
+    topk_ys = _gather_feat(topk_ys.view(batch, -1, 1), topk_ind).view(batch, K)
+    topk_xs = _gather_feat(topk_xs.view(batch, -1, 1), topk_ind).view(batch, K)
+
+    return topk_score, topk_inds, topk_clses, topk_ys, topk_xs
+
+model = 'checkpoints/dla_instance_001_3416.pth'
+imgpath = 'images/sheep-on-green-grass.jpg'
 
 net = get_pose_net(34, {'hm': 80, 'grad': 2}).cuda()
 missing, unexpected = net.load_state_dict(torch.load(model))
@@ -112,22 +140,22 @@ img = pre_process(img)
 
 with torch.no_grad():
     output = net(img.cuda())
-pred = _nms(output['hm'].squeeze().sigmoid()).cpu()
-grad = output['grad'].squeeze().tanh().cpu()*127*2
-background = torch.ones(1,128,128)*0.2
+pred = output['hm'].squeeze().cpu()
+grad = output['grad'].cpu()
+background = torch.ones(1,128,128) * 0.05
 pred = torch.cat([background, pred])
-pred = torch.softmax(pred, 0)
 pred = torch.argmax(pred, 0)
-# clamp= lambda x : min(max(int(x), 127),0)
-# gx = torch.from_numpy(np.expand_dims(np.array([x for x in range(128)]), 0).repeat(128, 0)) + grad[0]
-# gy = torch.from_numpy(np.expand_dims(np.array([x for x in range(128)]), 1).repeat(128, 1)) + grad[1]
-# pred = gx.map_(gy, lambda x,y:pred[clamp(y)][clamp(x)])
+grad = torch.nn.functional.interpolate(grad, size=[512,512], mode='bilinear', align_corners=True).squeeze()
+gx = torch.from_numpy(np.expand_dims(np.array([x for x in range(512)]), 0).repeat(512, 0)) + grad[0]
+gy = torch.from_numpy(np.expand_dims(np.array([x for x in range(512)]), 1).repeat(512, 1)) + grad[1]
+gx = (gx/4).round().clamp(0,127).type(torch.long)
+gy = (gy/4).round().clamp(0,127).type(torch.long)
+seg = gx.map_(gy, lambda x,y: pred[y][x]).type(torch.long)
 
 s = (grad[0].pow(2)+grad[1].pow(2)).sqrt().numpy()
-seg, text = visualize(pred.numpy().astype(np.int).tolist())
+seg, text = visualize(pred.numpy().tolist())
 seg = cv.resize(seg, (512,512), interpolation=cv.INTER_NEAREST)
-s = cv.resize(s, (512,512), interpolation=cv.INTER_NEAREST).astype(np.uint8)
-s = cv.cvtColor(s, cv.COLOR_GRAY2RGB)
+s = cv.cvtColor(s.astype(np.uint8), cv.COLOR_GRAY2RGB)
 print(text)
 # show = seg
 

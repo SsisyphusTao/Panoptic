@@ -43,25 +43,24 @@ class NetwithLoss(torch.nn.Module):
         self._sigmoid = lambda x: torch.clamp(x.sigmoid_(), min=1e-4, max=1-1e-4)
         self.onehot = lambda x: torch.nn.functional.one_hot(x, 81).permute(0,3,1,2)[:,1:,:,:]
         self.criter_for_cls = focalloss
-        self.criter_for_grad = torch.nn.L1Loss()
+        self.criter_for_grad = torch.nn.SmoothL1Loss()
         self.net = net
         self.net.train()
     @torch.cuda.amp.autocast()
-    def forward(self, images, anns, gx, gy):
+    def forward(self, images, anns, gx, gy, mask):
         preds = self.net(images)
 
-        loss_grad = self.criter_for_grad(preds['grad'].tanh(), torch.stack([gx, gy], 1))
+        grad = torch.nn.functional.interpolate(preds['grad'], size=[512,512], mode='bilinear', align_corners=True)
+        loss_grad = self.criter_for_grad(grad, torch.stack([gx, gy], 1))
 
         anns = self.onehot(anns)
+        mask = self.onehot(mask.squeeze().type(torch.long))
 
-        w = (gx.pow(2)+gy.pow(2)).sqrt()
-        w = w.unsqueeze(1).expand_as(anns)
-
-        w = w.where(anns>0, torch.ones_like(w))
+        w = (gx.pow(2)+gy.pow(2)).sqrt()/511
+        w = torch.nn.functional.interpolate(w.unsqueeze(1), size=[128,128], mode='bilinear', align_corners=True).expand_as(anns)
+        w = w.where(mask>0, torch.ones_like(w))
         loss_cls = self.criter_for_cls(self._sigmoid(preds['hm']), anns, w)
-        return loss_cls, loss_grad
+        return loss_cls, loss_grad*0.1
 
-
-# segs = torch.nn.functional.interpolate(preds['cls'], size=images.size()[2:], mode='bilinear', align_corners=True)
 # grad_x = preds['grad'][:16].reshape(-1,4,4,128,128).permute(0,3,1,4,2).flatten(3,4).flatten(1,2)
 # grad_y = preds['grad'][16:].reshape(-1,4,4,128,128).permute(0,3,1,4,2).flatten(3,4).flatten(1,2)

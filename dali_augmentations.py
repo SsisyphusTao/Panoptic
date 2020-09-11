@@ -90,5 +90,5 @@ class Augmentation(object):
         imgs, anns, gx, gy, x, y, s = self.randompad(imgs, anns, gx, gy)
         imgs, anns, gx, gy, c1, c2 = self.flip(imgs, anns, gx, gy)
         imgs = self.normalize(imgs)
-        anns, gx, gy = self.resize([anns, gx, gy])
+        anns = self.resize(anns)
         return imgs, anns, gx, gy, x, y, s, c1, c2

@@ -48,7 +48,7 @@ def train_one_epoch(loader, getloss, optimizer, epoch):
         # forward & backprop
         optimizer.zero_grad()
         gx, gy, ann = grad_preprocess(batch[0])
-        loss_c, loss_g = getloss(batch[0]['images'], ann, gx, gy)
+        loss_c, loss_g = getloss(batch[0]['images'], ann, gx, gy, batch[0]['anns'])
         loss = loss_c + loss_g
         scaler.scale(loss).backward()
         scaler.step(optimizer)

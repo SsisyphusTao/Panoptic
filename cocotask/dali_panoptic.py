@@ -47,26 +47,27 @@ def grad_preprocess(batch):
     x = batch['x'][:,1].unsqueeze(-1).unsqueeze(-1).expand_as(gx)
     y = batch['y'][:,0].unsqueeze(-1).unsqueeze(-1).expand_as(gy)
 
-    gx = torch.where(gx>0, gx/s-x, gx)/4
-    gy = torch.where(gy>0, gy/s-y, gy)/4
+    gx = torch.where(gx>0, gx/s-x, gx)
+    gy = torch.where(gy>0, gy/s-y, gy)
 
     c1 = batch['c1'].unsqueeze(-1).expand_as(gx).cuda()
     c2 = batch['c2'].unsqueeze(-1).expand_as(gy).cuda()
 
-    gx = torch.where(gx*c1>0, 127-gx, gx).clamp(0,127)
-    gy = torch.where(gy*c2>0, 127-gy, gy).clamp(0,127)
+    gx = torch.where(gx*c1>0, 511-gx, gx).clamp(0,511)
+    gy = torch.where(gy*c2>0, 511-gy, gy).clamp(0,511)
 
-    x = torch.from_numpy(np.expand_dims(np.array([x for x in range(128)]), 0).repeat(128, 0)).cuda()
-    y = torch.from_numpy(np.expand_dims(np.array([x for x in range(128)]), 1).repeat(128, 1)).cuda()
+    x = torch.from_numpy(np.expand_dims(np.array([x for x in range(512)]), 0).repeat(512, 0)).cuda()
+    y = torch.from_numpy(np.expand_dims(np.array([x for x in range(512)]), 1).repeat(512, 1)).cuda()
 
-    index = torch.stack([gx,gy], -1)
+    index = torch.stack([gx,gy], 1)
+    index = torch.nn.functional.interpolate(index, size=batch['anns'].size()[1:3]).permute(0,2,3,1)/4
     index = torch.cat([index, batch['anns']], -1).flatten(1,2).type(torch.long)
     index = index.unique(dim=1)
     dim = torch.tensor([[x] for x in range(index.size()[0])], dtype=torch.long).cuda()
     dim = dim.expand(-1, index.size()[1])
-    ann = torch.zeros_like(gx).type(torch.long)
+    ann = torch.zeros(batch['anns'].size()[:-1]).type(torch.long).cuda()
     ann.index_put_((dim,index[...,1],index[...,0]), index[...,-1])
-    return torch.where(gx>0, gx-x, gx)/127, torch.where(gy>0, gy-y, gy)/127, ann
+    return torch.where(gx>0, gx-x, gx), torch.where(gy>0, gy-y, gy), ann
 
 class panopticInputIterator(object):
     def __init__(self, batch_size):
