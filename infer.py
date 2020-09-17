@@ -91,46 +91,10 @@ def visualize(c):
     img = np.array(c, dtype=np.uint8)
     return img, text
 
-def _gather_feat(feat, ind, mask=None):
-    dim  = feat.size(2)
-    ind  = ind.unsqueeze(2).expand(ind.size(0), ind.size(1), dim)
-    feat = feat.gather(1, ind)
-    if mask is not None:
-        mask = mask.unsqueeze(2).expand_as(feat)
-        feat = feat[mask]
-        feat = feat.view(-1, dim)
-    return feat
+model = 'checkpoints/dla_instance_005_5520.pth'
+imgpath = 'images/image3.jpg'
 
-def _nms(heat, kernel=3):
-    pad = (kernel - 1) // 2
-
-    hmax = torch.nn.functional.max_pool2d(
-        heat, (kernel, kernel), stride=1, padding=pad)
-    keep = (hmax == heat).float()
-    return heat * keep
-
-def _topk(scores, K=40):
-    batch, cat, height, width = scores.size()
-      
-    topk_scores, topk_inds = torch.topk(scores.view(batch, cat, -1), K)
-
-    topk_inds = topk_inds % (height * width)
-    topk_ys   = (topk_inds.true_divide(width)).int().float()
-    topk_xs   = (topk_inds % width).int().float()
-      
-    topk_score, topk_ind = torch.topk(topk_scores.view(batch, -1), K)
-    topk_clses = (topk_ind.true_divide(K)).int()
-    topk_inds = _gather_feat(
-        topk_inds.view(batch, -1, 1), topk_ind).view(batch, K)
-    topk_ys = _gather_feat(topk_ys.view(batch, -1, 1), topk_ind).view(batch, K)
-    topk_xs = _gather_feat(topk_xs.view(batch, -1, 1), topk_ind).view(batch, K)
-
-    return topk_score, topk_inds, topk_clses, topk_ys, topk_xs
-
-model = 'checkpoints/dla_instance_001_3416.pth'
-imgpath = 'images/sheep-on-green-grass.jpg'
-
-net = get_pose_net(34, {'hm': 80, 'grad': 2}).cuda()
+net = get_pose_net(34, {'cls': 81, 'grad': 2, 'mask':1}).cuda()
 missing, unexpected = net.load_state_dict(torch.load(model))
 net.eval()
 
@@ -140,35 +104,23 @@ img = pre_process(img)
 
 with torch.no_grad():
     output = net(img.cuda())
-pred = output['hm'].squeeze().cpu()
+pred = output['cls'].squeeze().sigmoid().cpu()
 grad = output['grad'].cpu()
-background = torch.ones(1,128,128) * 0.05
-pred = torch.cat([background, pred])
+mask = output['mask'].cpu()
 pred = torch.argmax(pred, 0)
 grad = torch.nn.functional.interpolate(grad, size=[512,512], mode='bilinear', align_corners=True).squeeze()
+mask = torch.nn.functional.interpolate(mask, size=[512,512], mode='bilinear', align_corners=True).squeeze().sigmoid()
 gx = torch.from_numpy(np.expand_dims(np.array([x for x in range(512)]), 0).repeat(512, 0)) + grad[0]
 gy = torch.from_numpy(np.expand_dims(np.array([x for x in range(512)]), 1).repeat(512, 1)) + grad[1]
-gx = (gx/4).round().clamp(0,127).type(torch.long)
-gy = (gy/4).round().clamp(0,127).type(torch.long)
+gx = (gx//4).clamp(0,127).type(torch.long)
+gy = (gy//4).clamp(0,127).type(torch.long)
 seg = gx.map_(gy, lambda x,y: pred[y][x]).type(torch.long)
-
+seg = seg.where(mask>0.5, torch.zeros_like(seg))
 s = (grad[0].pow(2)+grad[1].pow(2)).sqrt().numpy()
-seg, text = visualize(pred.numpy().tolist())
+seg, text = visualize(seg.numpy().tolist())
 seg = cv.resize(seg, (512,512), interpolation=cv.INTER_NEAREST)
 s = cv.cvtColor(s.astype(np.uint8), cv.COLOR_GRAY2RGB)
 print(text)
-# show = seg
-
-# height, width = bg.shape[0:2]
-
-# inp_height, inp_width = [512,512]
-# c = np.array([width / 2., height / 2.], dtype=np.float32)
-# s = max(height, width) * 1.0
-
-# trans_input = get_affine_transform(c, s, 0, [inp_width, inp_height], inv=1)
-# mask = cv.warpAffine(
-#     show, trans_input, (width, height),
-#     flags=cv.INTER_NEAREST)
 
 for i, t in enumerate(tuple(text)):
     cv.putText(seg, t, (10,30*(i+1)), 0, 1, tuple(text[t]), 2)

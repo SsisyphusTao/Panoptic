@@ -18,8 +18,6 @@ import os
 parser = argparse.ArgumentParser(
     description='CenterNet task')
 train_set = parser.add_mutually_exclusive_group()
-parser.add_argument('--datafile', default=None,
-                    help='Path of training set')
 parser.add_argument('--batch_size', default=128, type=int,
                     help='Batch size for training')
 parser.add_argument('--resume', type=str,
@@ -48,16 +46,16 @@ def train_one_epoch(loader, getloss, optimizer, epoch):
         # forward & backprop
         optimizer.zero_grad()
         gx, gy, ann = grad_preprocess(batch[0])
-        loss_c, loss_g = getloss(batch[0]['images'], ann, gx, gy, batch[0]['anns'])
-        loss = loss_c + loss_g
+        loss_c, loss_g, loss_m = getloss(batch[0], ann, gx, gy)
+        loss = loss_c + loss_g + loss_m
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         t1 = time.clock()
         loss_amount += loss.item()
         scaler.update()
         if iteration % 10 == 0 and not iteration == 0 and not args.local_rank:
-            print('Loss: %.4f, cls: %.4f, grad: %.4f | iter: %03d | timer: %.4f sec. | epoch: %d' %
-                    (loss_amount/iteration, loss_c.item(), loss_g.item(), iteration, t1-t0, epoch))
+            print('Loss: %.4f, cls: %.4f, grad: %.4f, mask: %.4f | iter: %03d | timer: %.4f sec. | epoch: %d' %
+                    (loss_amount/iteration, loss_c.item(), loss_g.item(), loss_m.item(), iteration, t1-t0, epoch))
         t0 = t1
     print('Device:%d  Loss: %.6f' % (args.local_rank, (loss_amount/iteration)))
     return '_%d' % (loss_amount/iteration*1000)
@@ -74,7 +72,7 @@ def train():
         N_gpu = torch.distributed.get_world_size()
     else:
         N_gpu = 1
-    net = get_pose_net(34, {'hm': 80, 'grad':2})
+    net = get_pose_net(34, {'cls': 81, 'grad':2, 'mask':1})
     if args.resume:
         missing, unexpected = net.load_state_dict(torch.load(args.resume, map_location='cpu'), strict=False)
 
@@ -114,7 +112,7 @@ def train():
         print(args)
     torch.cuda.empty_cache()
     # create batch iterator
-    for iteration in range(args.start_iter + 1, args.epochs):
+    for iteration in range(args.start_iter + 1, args.epochs + 1):
         loss = train_one_epoch(data_loader, getloss, optimizer, iteration)
         external.shuffle()
         adjust_learning_rate.step()

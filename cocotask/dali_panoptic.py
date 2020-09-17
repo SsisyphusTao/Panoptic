@@ -59,14 +59,15 @@ def grad_preprocess(batch):
     x = torch.from_numpy(np.expand_dims(np.array([x for x in range(512)]), 0).repeat(512, 0)).cuda()
     y = torch.from_numpy(np.expand_dims(np.array([x for x in range(512)]), 1).repeat(512, 1)).cuda()
 
-    index = torch.stack([gx,gy], 1)
-    index = torch.nn.functional.interpolate(index, size=batch['anns'].size()[1:3]).permute(0,2,3,1)/4
+    index = torch.stack([gx,gy], 1).permute(0,2,3,1)
     index = torch.cat([index, batch['anns']], -1).flatten(1,2).type(torch.long)
     index = index.unique(dim=1)
     dim = torch.tensor([[x] for x in range(index.size()[0])], dtype=torch.long).cuda()
     dim = dim.expand(-1, index.size()[1])
-    ann = torch.zeros(batch['anns'].size()[:-1]).type(torch.long).cuda()
-    ann.index_put_((dim,index[...,1],index[...,0]), index[...,-1])
+    ann = torch.zeros(batch['anns'].size()[0],128,128, dtype=torch.long).cuda()
+    ann.index_put_((dim,index[...,1]//4,  \
+                        index[...,0]//4), \
+                        index[...,-1])
     return torch.where(gx>0, gx-x, gx), torch.where(gy>0, gy-y, gy), ann
 
 class panopticInputIterator(object):
