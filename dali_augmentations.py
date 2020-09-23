@@ -5,21 +5,20 @@ import nvidia.dali.types as types
 
 class RandomColorTwist(object):
     def __init__(self, alpha=[0.5, 1.5], delta=[0.875, 1.125], gamma=[-0.5, 0.5]):
-        self.contrast = ops.Uniform(range=alpha)
-        self.brightness = ops.Uniform(range=delta)
-        self.saturation = ops.Uniform(range=alpha)
+        self.contrast = ops.Uniform(range=gamma)
+        self.brightness = ops.Uniform(range=[-0.125, 0.125])
+        self.saturation = ops.Uniform(range=gamma)
         self.hue = ops.Uniform(range=gamma)
         self.ct = ops.ColorTwist(device="gpu")
-        self.toss_a_coin = ops.CoinFlip(probability=0.75)
+        self.toss_a_coin = ops.CoinFlip(probability=0.5)
 
     # expects float image
     def __call__(self, images):
-        if self.toss_a_coin():
-            images = self.ct(images,
-                            brightness=self.brightness(),
-                            contrast=self.contrast(),
-                            hue=self.hue(),
-                            saturation=self.saturation())
+        images = self.ct(images,
+                        brightness=self.brightness()*self.toss_a_coin()+1,
+                        contrast=self.contrast()*self.toss_a_coin()+1,
+                        hue=self.hue()*self.toss_a_coin(),
+                        saturation=self.saturation()*self.toss_a_coin()+1)
         return images
 
 class RandomFlip(object):
@@ -78,7 +77,6 @@ class Normalize(object):
 
 class Augmentation(object):
     def __init__(self, size=512, mean=[0.47026115*255, 0.40789654*255, 0.44719302*255], std=[0.27809835*255, 0.28863828*255, 0.27408164*255]):
-        self.toss_a_coin = ops.CoinFlip(probability=0.5)
         self.randomct = RandomColorTwist()
         self.randompad = RandomPad(size, mean)
         self.normalize = Normalize(size, mean, std)

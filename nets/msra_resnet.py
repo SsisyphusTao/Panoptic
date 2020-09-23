@@ -14,7 +14,7 @@ import os
 import torch
 import torch.nn as nn
 import torch.utils.model_zoo as model_zoo
-import torch.nn.functional as F
+
 BN_MOMENTUM = 0.1
 
 model_urls = {
@@ -103,32 +103,6 @@ class Bottleneck(nn.Module):
 
         return out
 
-class ASPP(nn.Module):
-    def __init__(self, in_channel=512, depth=256):
-        super(ASPP,self).__init__()
-        self.mean = nn.AdaptiveAvgPool2d((1, 1)) #(1,1)means ouput_dim
-        self.conv = nn.Conv2d(in_channel, depth, 1, 1)
-        self.atrous_block1 = nn.Conv2d(in_channel, depth, 1, 1)
-        self.atrous_block6 = nn.Conv2d(in_channel, depth, 3, 1, padding=6, dilation=6)
-        self.atrous_block12 = nn.Conv2d(in_channel, depth, 3, 1, padding=12, dilation=12)
-        self.atrous_block18 = nn.Conv2d(in_channel, depth, 3, 1, padding=18, dilation=18)
-        self.conv_1x1_output = nn.Conv2d(depth * 5, depth, 1, 1)
- 
-    def forward(self, x):
-        size = x.shape[2:]
- 
-        image_features = self.mean(x)
-        image_features = self.conv(image_features)
-        image_features = F.interpolate(image_features, size=size, mode='bilinear', align_corners=True)
- 
-        atrous_block1 = self.atrous_block1(x)
-        atrous_block6 = self.atrous_block6(x)
-        atrous_block12 = self.atrous_block12(x)
-        atrous_block18 = self.atrous_block18(x)
- 
-        net = self.conv_1x1_output(torch.cat([image_features, atrous_block1, atrous_block6,
-                                              atrous_block12, atrous_block18], dim=1))
-        return net
 
 class PoseResNet(nn.Module):
 
@@ -150,18 +124,12 @@ class PoseResNet(nn.Module):
 
         # used for deconv layers
         self.deconv_layers = self._make_deconv_layer(
-            2,
-            [256, 256],
-            [4, 4],
-        )
-        self.inplanes *= 2
-        self.deconv_layers_ = self._make_deconv_layer(
-            1,
-            [256],
-            [4],
+            3,
+            [256, 256, 256],
+            [4, 4, 4],
         )
         # self.final_layer = []
-        self.aspp = ASPP()
+
         for head in sorted(self.heads):
           num_output = self.heads[head]
           if head_conv > 0:
@@ -248,15 +216,14 @@ class PoseResNet(nn.Module):
 
         x = self.layer1(x)
         x = self.layer2(x)
-        y = self.aspp(x)
         x = self.layer3(x)
         x = self.layer4(x)
+
         x = self.deconv_layers(x)
-        x = self.deconv_layers_(torch.cat([x,y], dim=1))
         ret = {}
         for head in self.heads:
             ret[head] = self.__getattr__(head)(x)
-        return ret
+        return [ret]
 
     def init_weights(self, num_layers, pretrained=True):
         if pretrained:
@@ -305,7 +272,7 @@ resnet_spec = {18: (BasicBlock, [2, 2, 2, 2]),
                152: (Bottleneck, [3, 8, 36, 3])}
 
 
-def get_pose_net(num_layers, heads, head_conv=64):
+def get_pose_net(num_layers, heads, head_conv):
   block_class, layers = resnet_spec[num_layers]
 
   model = PoseResNet(block_class, layers, heads, head_conv=head_conv)

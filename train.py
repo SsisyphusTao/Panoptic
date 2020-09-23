@@ -72,7 +72,7 @@ def train():
         N_gpu = torch.distributed.get_world_size()
     else:
         N_gpu = 1
-    net = get_pose_net(34, {'cls': 81, 'grad':2, 'mask':1})
+    net = get_pose_net(34, {'hm': 80, 'grad':2, 'mask':1})
     if args.resume:
         missing, unexpected = net.load_state_dict(torch.load(args.resume, map_location='cpu'), strict=False)
 
