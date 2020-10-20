@@ -40,8 +40,10 @@ class NetwithLoss(torch.nn.Module):
         preds = self.net(batch['images'])
         
         grad = torch.nn.functional.interpolate(preds['grad'], size=[512,512], mode='bilinear', align_corners=True)
-        loss_grad = self.criter_for_grad(grad, torch.stack([gx, gy], 1))
-        mp = batch['anns'].gt(0).type(torch.long).sum() * 2
+        mask = batch['anns'].squeeze().gt(0).type_as(grad)
+        mask[mask==0] = -1
+        loss_grad = self.criter_for_grad(grad, torch.stack([gx, gy, mask], 1))
+        mp = batch['anns'].gt(0).type(torch.long).sum() * 3
 
         loss_cls = self.criter_for_cls(self._sigmoid(preds['hm']), self.onehot(anns))
         return loss_cls, 0.1 * (loss_grad / mp if mp else 1)

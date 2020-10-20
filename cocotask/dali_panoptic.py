@@ -67,9 +67,9 @@ def grad_preprocess(batch):
     index = index.unique(dim=1)
     dim = torch.tensor([[x] for x in range(index.size()[0])], dtype=torch.long).cuda()
     dim = dim.expand(-1, index.size()[1])
-    ann = torch.zeros(batch['anns'].size()[0],32,32, dtype=torch.long).cuda()
-    ann.index_put_((dim,index[...,1]//16,  \
-                        index[...,0]//16), \
+    ann = torch.zeros(batch['anns'].size()[0],16,16, dtype=torch.long).cuda()
+    ann.index_put_((dim,index[...,1]//32,  \
+                        index[...,0]//32), \
                         index[...,-1])
     return torch.where(gx>0, gx-x, gx), torch.where(gy>0, gy-y, gy), ann
 

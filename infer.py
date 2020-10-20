@@ -125,10 +125,11 @@ def _topk(scores, K=10):
     return topk_score, topk_inds, topk_clses, topk_ys, topk_xs
 
 # model = '../backups/dla_instance_v4.0/dla_instance_139_1877.pth'
-model = 'checkpoints/dla_instance_103_4260.pth'
-imgpath = 'images/sheep-on-green-grass.jpg'
+# model = '../backups/dla_instance_v5.0/dla_instance_104_4343.pth'
+model = 'checkpoints/dla_instance_140_2615.pth'
+imgpath = 'images/dogs_people.jpg'
 
-net = get_pose_net(50, {'hm': 80, 'grad': 2}).cuda()
+net = get_pose_net(50, {'hm': 80, 'grad': 3}).cuda()
 missing, unexpected = net.load_state_dict(torch.load(model))
 net.eval()
 
@@ -140,15 +141,21 @@ with torch.no_grad():
     output = net(img.cuda())
 pred = output['hm'].sigmoid().cpu()
 grad = output['grad'].cpu()
-pred = torch.argmax(torch.cat([torch.ones(1,32,32)*0.4, pred.squeeze()]), 0)
+# m = output['mask'].cpu()
+pred = torch.argmax(torch.cat([torch.ones(1,16,16)*0.1, pred.squeeze()],0), 0)
 grad = torch.nn.functional.interpolate(grad, size=[512,512], mode='bilinear', align_corners=True).squeeze()
+# m = torch.nn.functional.interpolate(m, size=[512,512], mode='bilinear', align_corners=True).sigmoid().squeeze()
 gx = torch.from_numpy(np.expand_dims(np.array([x for x in range(512)]), 0).repeat(512, 0)) + grad[0]
 gy = torch.from_numpy(np.expand_dims(np.array([x for x in range(512)]), 1).repeat(512, 1)) + grad[1]
-gx = (gx//16).clamp(0,31).type(torch.long)
-gy = (gy//16).clamp(0,31).type(torch.long)
+# a = gx.where(m>0.5, torch.zeros_like(gx))
+# b = gy.where(m>0.5, torch.zeros_like(gy))
+# s = torch.stack([a,b,(a+b)*0.5],-1).numpy().astype(np.uint8)
+gx = (gx//32).clamp(0,15).type(torch.long)
+gy = (gy//32).clamp(0,15).type(torch.long)
 seg = gx.map_(gy, lambda x,y: pred[y][x]).type(torch.long)
+seg = seg.where(grad[2]>0, torch.zeros_like(seg))
 s = (grad[0].pow(2)+grad[1].pow(2)).sqrt()
-seg, text = visualize(pred.numpy().tolist())
+seg, text = visualize(seg.numpy().tolist())
 seg = cv.resize(seg, (512,512), interpolation=cv.INTER_NEAREST)
 s = cv.cvtColor(s.numpy().astype(np.uint8), cv.COLOR_GRAY2RGB)
 # height, width = bg.shape[0:2]

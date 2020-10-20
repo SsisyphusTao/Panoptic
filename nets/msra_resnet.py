@@ -166,7 +166,7 @@ class PoseResNet(nn.Module):
           num_output = self.heads[head]
           if head_conv > 0:
             fc = nn.Sequential(
-                nn.Conv2d(256 if head=='hm' else 512, head_conv,
+                nn.Conv2d(2048 if head=='hm' else 512, head_conv,
                   kernel_size=3, padding=1, bias=True),
                 nn.ReLU(inplace=True),
                 nn.Conv2d(head_conv, num_output, 
@@ -251,16 +251,16 @@ class PoseResNet(nn.Module):
         f = self.feature(x)
         x = self.layer2(x)
         x = self.layer3(x)
-        x = self.layer4(x)
+        x = y = self.layer4(x)
 
         x = self.deconv_layers(x)
         x = self.aspp(x)
-        y = self.deconv_layers2(x)
+        x = self.deconv_layers2(x)
         ret = {}
         # for head in self.heads:
         #     ret[head] = self.__getattr__(head)(x)
-        ret['hm'] = self.__getattr__('hm')(x)
-        ret['grad']=self.__getattr__('grad')(torch.cat([y,f],1))
+        ret['hm'] = self.__getattr__('hm')(y)
+        ret['grad']=self.__getattr__('grad')(torch.cat([x,f],1))
         return ret
 
     def init_weights(self, num_layers, pretrained=True):
