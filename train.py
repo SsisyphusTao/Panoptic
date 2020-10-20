@@ -46,16 +46,16 @@ def train_one_epoch(loader, getloss, optimizer, epoch):
         # forward & backprop
         optimizer.zero_grad()
         gx, gy, ann = grad_preprocess(batch[0])
-        loss_c, loss_g, loss_m = getloss(batch[0], ann, gx, gy)
-        loss = loss_c + loss_g + loss_m
+        loss_c, loss_g = getloss(batch[0], ann, gx, gy)
+        loss = loss_c + loss_g
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         t1 = time.clock()
         loss_amount += loss.item()
         scaler.update()
         if iteration % 10 == 0 and not iteration == 0 and not args.local_rank:
-            print('Loss: %.4f, cls: %.4f, grad: %.4f, mask: %.4f | iter: %03d | timer: %.4f sec. | epoch: %d' %
-                    (loss_amount/iteration, loss_c.item(), loss_g.item(), loss_m.item(), iteration, t1-t0, epoch))
+            print('Loss: %.4f, cls: %.4f, grad: %.4f | iter: %03d | timer: %.4f sec. | epoch: %d' %
+                    (loss_amount/iteration, loss_c.item(), loss_g.item(), iteration, t1-t0, epoch))
         t0 = t1
     print('Device:%d  Loss: %.6f' % (args.local_rank, (loss_amount/iteration)))
     return '_%d' % (loss_amount/iteration*1000)
@@ -72,7 +72,7 @@ def train():
         N_gpu = torch.distributed.get_world_size()
     else:
         N_gpu = 1
-    net = get_pose_net(34, {'hm': 80, 'grad':2, 'mask':1})
+    net = get_pose_net(50, {'hm': 80, 'grad':2}, 64)
     if args.resume:
         missing, unexpected = net.load_state_dict(torch.load(args.resume, map_location='cpu'), strict=False)
 

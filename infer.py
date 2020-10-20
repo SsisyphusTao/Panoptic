@@ -124,11 +124,11 @@ def _topk(scores, K=10):
 
     return topk_score, topk_inds, topk_clses, topk_ys, topk_xs
 
-# model = '../backups/dla_instance_v4.0/dla_instance_136_1870.pth'
-model = 'checkpoints/dla_instance_032_9363.pth'
-imgpath = 'images/image1.jpg'
+# model = '../backups/dla_instance_v4.0/dla_instance_139_1877.pth'
+model = 'checkpoints/dla_instance_103_4260.pth'
+imgpath = 'images/sheep-on-green-grass.jpg'
 
-net = get_pose_net(34, {'hm': 80, 'grad': 2, 'mask':1}).cuda()
+net = get_pose_net(50, {'hm': 80, 'grad': 2}).cuda()
 missing, unexpected = net.load_state_dict(torch.load(model))
 net.eval()
 
@@ -140,22 +140,15 @@ with torch.no_grad():
     output = net(img.cuda())
 pred = output['hm'].sigmoid().cpu()
 grad = output['grad'].cpu()
-mask = output['mask'].cpu()
-m = mask.sigmoid().ge(0.5).type_as(pred)
-pred = pred * m.expand_as(pred)
-sc,_,_,xs,ys = _topk(_nms(pred))
-pred = torch.argmax(pred.squeeze(), 0)+1
+pred = torch.argmax(torch.cat([torch.ones(1,32,32)*0.4, pred.squeeze()]), 0)
 grad = torch.nn.functional.interpolate(grad, size=[512,512], mode='bilinear', align_corners=True).squeeze()
-mask = torch.nn.functional.interpolate(mask, size=[512,512], mode='bilinear', align_corners=True).squeeze().sigmoid()
 gx = torch.from_numpy(np.expand_dims(np.array([x for x in range(512)]), 0).repeat(512, 0)) + grad[0]
 gy = torch.from_numpy(np.expand_dims(np.array([x for x in range(512)]), 1).repeat(512, 1)) + grad[1]
-gx = (gx//4).clamp(0,127).type(torch.long)
-gy = (gy//4).clamp(0,127).type(torch.long)
+gx = (gx//16).clamp(0,31).type(torch.long)
+gy = (gy//16).clamp(0,31).type(torch.long)
 seg = gx.map_(gy, lambda x,y: pred[y][x]).type(torch.long)
-seg = seg.where(mask>0.5, torch.zeros_like(seg))
 s = (grad[0].pow(2)+grad[1].pow(2)).sqrt()
-s = s.where(mask>0.5, torch.zeros_like(s))
-seg, text = visualize(seg.numpy().tolist())
+seg, text = visualize(pred.numpy().tolist())
 seg = cv.resize(seg, (512,512), interpolation=cv.INTER_NEAREST)
 s = cv.cvtColor(s.numpy().astype(np.uint8), cv.COLOR_GRAY2RGB)
 # height, width = bg.shape[0:2]

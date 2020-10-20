@@ -30,6 +30,32 @@ def conv3x3(in_planes, out_planes, stride=1):
     return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
                      padding=1, bias=False)
 
+class ASPP(nn.Module):
+    def __init__(self, in_channel=512, depth=256):
+        super(ASPP,self).__init__()
+        self.mean = nn.AdaptiveAvgPool2d((1, 1)) #(1,1)means ouput_dim
+        self.conv = nn.Conv2d(in_channel, depth, 1, 1)
+        self.atrous_block1 = nn.Conv2d(in_channel, depth, 1, 1)
+        self.atrous_block6 = nn.Conv2d(in_channel, depth, 3, 1, padding=6, dilation=6)
+        self.atrous_block12 = nn.Conv2d(in_channel, depth, 3, 1, padding=12, dilation=12)
+        self.atrous_block18 = nn.Conv2d(in_channel, depth, 3, 1, padding=18, dilation=18)
+        self.conv_1x1_output = nn.Conv2d(depth * 5, depth, 1, 1)
+ 
+    def forward(self, x):
+        size = x.shape[2:]
+ 
+        image_features = self.mean(x)
+        image_features = self.conv(image_features)
+        image_features = torch.nn.functional.interpolate(image_features, size=size, mode='bilinear', align_corners=True)
+ 
+        atrous_block1 = self.atrous_block1(x)
+        atrous_block6 = self.atrous_block6(x)
+        atrous_block12 = self.atrous_block12(x)
+        atrous_block18 = self.atrous_block18(x)
+ 
+        net = self.conv_1x1_output(torch.cat([image_features, atrous_block1, atrous_block6,
+                                              atrous_block12, atrous_block18], dim=1))
+        return net
 
 class BasicBlock(nn.Module):
     expansion = 1
@@ -124,9 +150,15 @@ class PoseResNet(nn.Module):
 
         # used for deconv layers
         self.deconv_layers = self._make_deconv_layer(
-            3,
-            [256, 256, 256],
-            [4, 4, 4],
+            1,
+            [512],
+            [4],
+        )
+        self.inplanes = self.inplanes//2
+        self.deconv_layers2 = self._make_deconv_layer(
+            2,
+            [256,256],
+            [4,4],
         )
         # self.final_layer = []
 
@@ -134,7 +166,7 @@ class PoseResNet(nn.Module):
           num_output = self.heads[head]
           if head_conv > 0:
             fc = nn.Sequential(
-                nn.Conv2d(256, head_conv,
+                nn.Conv2d(256 if head=='hm' else 512, head_conv,
                   kernel_size=3, padding=1, bias=True),
                 nn.ReLU(inplace=True),
                 nn.Conv2d(head_conv, num_output, 
@@ -205,7 +237,8 @@ class PoseResNet(nn.Module):
             layers.append(nn.BatchNorm2d(planes, momentum=BN_MOMENTUM))
             layers.append(nn.ReLU(inplace=True))
             self.inplanes = planes
-
+        self.aspp = ASPP()
+        self.feature = nn.Conv2d(256, 256, 1, 1)
         return nn.Sequential(*layers)
 
     def forward(self, x):
@@ -215,15 +248,20 @@ class PoseResNet(nn.Module):
         x = self.maxpool(x)
 
         x = self.layer1(x)
+        f = self.feature(x)
         x = self.layer2(x)
         x = self.layer3(x)
         x = self.layer4(x)
 
         x = self.deconv_layers(x)
+        x = self.aspp(x)
+        y = self.deconv_layers2(x)
         ret = {}
-        for head in self.heads:
-            ret[head] = self.__getattr__(head)(x)
-        return [ret]
+        # for head in self.heads:
+        #     ret[head] = self.__getattr__(head)(x)
+        ret['hm'] = self.__getattr__('hm')(x)
+        ret['grad']=self.__getattr__('grad')(torch.cat([y,f],1))
+        return ret
 
     def init_weights(self, num_layers, pretrained=True):
         if pretrained:
@@ -272,7 +310,7 @@ resnet_spec = {18: (BasicBlock, [2, 2, 2, 2]),
                152: (Bottleneck, [3, 8, 36, 3])}
 
 
-def get_pose_net(num_layers, heads, head_conv):
+def get_pose_net(num_layers, heads, head_conv=256):
   block_class, layers = resnet_spec[num_layers]
 
   model = PoseResNet(block_class, layers, heads, head_conv=head_conv)

@@ -31,9 +31,8 @@ class NetwithLoss(torch.nn.Module):
         super().__init__()
         self._sigmoid = lambda x: torch.clamp(x.sigmoid_(), min=1e-4, max=1-1e-4)
         self.onehot = lambda x: torch.nn.functional.one_hot(x, 81).permute(0,3,1,2)[:,1:,:,:]
-        self.criter_for_cls = torch.nn.CrossEntropyLoss(ignore_index=-1)
-        self.criter_for_grad = torch.nn.SmoothL1Loss(reduction='none')
-        self.criter_for_mask = focalloss
+        self.criter_for_cls = focalloss
+        self.criter_for_grad = torch.nn.SmoothL1Loss(reduction='sum')
         self.net = net
         self.net.train()
     @torch.cuda.amp.autocast()
@@ -41,13 +40,8 @@ class NetwithLoss(torch.nn.Module):
         preds = self.net(batch['images'])
         
         grad = torch.nn.functional.interpolate(preds['grad'], size=[512,512], mode='bilinear', align_corners=True)
-        mask = torch.nn.functional.interpolate(preds['mask'], size=[512,512], mode='bilinear', align_corners=True)
+        loss_grad = self.criter_for_grad(grad, torch.stack([gx, gy], 1))
+        mp = batch['anns'].gt(0).type(torch.long).sum() * 2
 
-        m = batch['anns'].gt(0).type_as(mask).permute(0,3,1,2)
-        mp = m.sum()
-        loss_mask = self.criter_for_mask(self._sigmoid(mask), m)
-        loss_grad = self.criter_for_grad(grad, torch.stack([gx, gy], 1)) * m.expand_as(grad)
-        loss_grad = loss_grad.sum() / mp if mp else 1
-
-        loss_cls = self.criter_for_cls(preds['hm'], anns-1)
-        return loss_cls*10, loss_grad * 0.1, loss_mask*10
+        loss_cls = self.criter_for_cls(self._sigmoid(preds['hm']), self.onehot(anns))
+        return loss_cls, 0.1 * (loss_grad / mp if mp else 1)

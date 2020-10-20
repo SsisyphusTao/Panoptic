@@ -53,8 +53,11 @@ def grad_preprocess(batch):
     c1 = batch['c1'].unsqueeze(-1).expand_as(gx).cuda()
     c2 = batch['c2'].unsqueeze(-1).expand_as(gy).cuda()
 
-    gx = torch.where(gx*c1>0, 511-gx, gx).clamp(0,511)
-    gy = torch.where(gy*c2>0, 511-gy, gy).clamp(0,511)
+    gx = torch.where(gx*c1>0, 511-gx, gx).clamp_min(0)
+    gy = torch.where(gy*c2>0, 511-gy, gy).clamp_min(0)
+
+    gx = gx.where(gx<512, torch.zeros_like(gx))
+    gy = gy.where(gy<512, torch.zeros_like(gy))
 
     x = torch.from_numpy(np.expand_dims(np.array([x for x in range(512)]), 0).repeat(512, 0)).cuda()
     y = torch.from_numpy(np.expand_dims(np.array([x for x in range(512)]), 1).repeat(512, 1)).cuda()
@@ -64,9 +67,9 @@ def grad_preprocess(batch):
     index = index.unique(dim=1)
     dim = torch.tensor([[x] for x in range(index.size()[0])], dtype=torch.long).cuda()
     dim = dim.expand(-1, index.size()[1])
-    ann = torch.zeros(batch['anns'].size()[0],128,128, dtype=torch.long).cuda()
-    ann.index_put_((dim,index[...,1]//4,  \
-                        index[...,0]//4), \
+    ann = torch.zeros(batch['anns'].size()[0],32,32, dtype=torch.long).cuda()
+    ann.index_put_((dim,index[...,1]//16,  \
+                        index[...,0]//16), \
                         index[...,-1])
     return torch.where(gx>0, gx-x, gx), torch.where(gy>0, gy-y, gy), ann
 
